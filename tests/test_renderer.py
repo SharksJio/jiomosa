@@ -63,9 +63,12 @@ def test_session_lifecycle():
     assert response.status_code == 200, f"Session info failed: {response.status_code}"
     data = response.json()
     assert 'page_info' in data, "Page info missing"
-    # Verify the URL is from the expected domain
+    # Verify the URL is from the expected domain (exact match or with path)
     url = data['page_info']['url']
-    assert url.startswith('https://example.com'), "URL not loaded correctly"
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    assert parsed.scheme == 'https', "URL scheme should be https"
+    assert parsed.netloc == 'example.com', "URL domain should be example.com"
     print("  ✓ Session info retrieved")
     
     # Close session
