@@ -1,0 +1,94 @@
+services:
+  # Guacamole daemon - handles remote desktop protocols
+  guacd:
+    image: guacamole/guacd:latest
+    container_name: jiomosa-guacd
+    restart: unless-stopped
+    networks:
+      - jiomosa-network
+    ports:
+      - "4822:4822"
+
+  # PostgreSQL database for Guacamole
+  postgres:
+    image: postgres:15
+    container_name: jiomosa-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: guacamole_db
+      POSTGRES_USER: guacamole_user
+      POSTGRES_PASSWORD: guacamole_pass
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/initdb.sql:/docker-entrypoint-initdb.d/initdb.sql
+    networks:
+      - jiomosa-network
+
+  # Guacamole web application
+  guacamole:
+    image: guacamole/guacamole:latest
+    container_name: jiomosa-guacamole
+    restart: unless-stopped
+    environment:
+      GUACD_HOSTNAME: guacd
+      POSTGRES_HOSTNAME: postgres
+      POSTGRES_DATABASE: guacamole_db
+      POSTGRES_USER: guacamole_user
+      POSTGRES_PASSWORD: guacamole_pass
+    ports:
+      - "8080:8080"
+    depends_on:
+      - guacd
+      - postgres
+    networks:
+      - jiomosa-network
+
+  # Selenium Chrome node with VNC
+  chrome:
+    image: selenium/standalone-chrome:latest
+    container_name: jiomosa-chrome
+    restart: unless-stopped
+    shm_size: 2gb
+    environment:
+      - VNC_NO_PASSWORD=1
+      - SE_NODE_MAX_SESSIONS=5
+      - SE_NODE_SESSION_TIMEOUT=300
+    ports:
+      - "4444:4444"  # Selenium
+      - "5900:5900"  # VNC
+      - "7900:7900"  # noVNC web interface
+    networks:
+      - jiomosa-network
+    volumes:
+      - /dev/shm:/dev/shm
+
+  # Custom renderer service
+  renderer:
+    build:
+      context: ./renderer
+      dockerfile: Dockerfile
+    container_name: jiomosa-renderer
+    restart: unless-stopped
+    environment:
+      - SELENIUM_HOST=chrome
+      - SELENIUM_PORT=4444
+      - GUACD_HOST=guacd
+      - GUACD_PORT=4822
+      - VNC_HOST=chrome
+      - VNC_PORT=5900
+    ports:
+      - "5000:5000"
+    depends_on:
+      - chrome
+      - guacd
+    networks:
+      - jiomosa-network
+    volumes:
+      - ./renderer:/app
+
+networks:
+  jiomosa-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
