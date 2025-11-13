@@ -190,7 +190,7 @@ def create_session():
         
     except Exception as e:
         logger.error(f"Error creating session: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to create session'}), 500
 
 
 @app.route('/api/session/<session_id>/load', methods=['POST'])
@@ -233,7 +233,7 @@ def load_url(session_id):
             
     except Exception as e:
         logger.error(f"Error loading URL: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to load URL'}), 500
 
 
 @app.route('/api/session/<session_id>/info', methods=['GET'])
@@ -260,7 +260,7 @@ def session_info(session_id):
         
     except Exception as e:
         logger.error(f"Error getting session info: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to get session info'}), 500
 
 
 @app.route('/api/session/<session_id>/close', methods=['POST', 'DELETE'])
@@ -284,7 +284,7 @@ def close_session(session_id):
         
     except Exception as e:
         logger.error(f"Error closing session: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to close session'}), 500
 
 
 @app.route('/api/sessions', methods=['GET'])
@@ -308,7 +308,7 @@ def list_sessions():
         
     except Exception as e:
         logger.error(f"Error listing sessions: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to list sessions'}), 500
 
 
 @app.route('/api/vnc/info', methods=['GET'])
@@ -330,4 +330,6 @@ if __name__ == '__main__':
     logger.info(f"Guacamole: {GUACD_HOST}:{GUACD_PORT}")
     logger.info(f"VNC: {VNC_HOST}:{VNC_PORT}")
     
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Debug mode disabled for security - use environment variable to enable if needed
+    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+    app.run(host='0.0.0.0', port=5000, debug=debug_mode)

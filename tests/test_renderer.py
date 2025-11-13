@@ -63,7 +63,9 @@ def test_session_lifecycle():
     assert response.status_code == 200, f"Session info failed: {response.status_code}"
     data = response.json()
     assert 'page_info' in data, "Page info missing"
-    assert 'example.com' in data['page_info']['url'], "URL not loaded correctly"
+    # Verify the URL is from the expected domain
+    url = data['page_info']['url']
+    assert url.startswith('https://example.com'), "URL not loaded correctly"
     print("  ✓ Session info retrieved")
     
     # Close session
