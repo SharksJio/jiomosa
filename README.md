@@ -80,13 +80,30 @@ Jiomosa enables rendering of complex, resource-intensive websites on powerful cl
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Option 1: GitHub Codespaces (Fastest - No Setup Required!)
 
+Perfect for testing without any local installation:
+
+1. Click the green **Code** button at the top of this repository
+2. Select **Codespaces** tab
+3. Click **Create codespace on main**
+4. Wait 3-5 minutes for automatic setup
+5. In the terminal, run:
+```bash
+docker compose up -d
+```
+6. Access port 7900 in the **PORTS** tab to view rendered websites
+
+📖 **Detailed guide**: See [CODESPACES.md](CODESPACES.md) for complete instructions and external website testing
+
+### Option 2: Local Installation
+
+**Prerequisites:**
 - Docker and Docker Compose
 - 4GB+ RAM recommended for running all services
 - Ports 5000, 8080, 4444, 5900, 7900 available
 
-### Installation
+**Installation:**
 
 1. Clone the repository:
 ```bash
@@ -159,12 +176,46 @@ docker compose up -d
 # Run integration tests
 python tests/test_renderer.py
 
-# Run website rendering tests
+# Run basic website rendering tests
 bash tests/test_websites.sh
+
+# Run comprehensive external website tests (20+ websites)
+bash tests/test_external_websites.sh
 
 # Stop services
 docker compose down
 ```
+
+### Testing External Websites
+
+Test Jiomosa with real-world websites:
+
+```bash
+# Quick test with a single website
+curl -X POST http://localhost:5000/api/session/create \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "test1"}'
+
+curl -X POST http://localhost:5000/api/session/test1/load \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.wikipedia.org"}'
+
+# View at: http://localhost:7900
+```
+
+The comprehensive test suite (`tests/test_external_websites.sh`) tests various website categories:
+- Simple/Static sites
+- Search engines
+- News sites
+- Documentation
+- Developer platforms
+- Social media
+- Educational sites
+- Media sites
+- E-commerce
+- Blogs/Content sites
+
+**For GitHub Codespaces users**: See [CODESPACES.md](CODESPACES.md) for detailed testing guide
 
 ### Manual Testing:
 ```bash
