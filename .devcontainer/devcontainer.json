@@ -1,0 +1,97 @@
+{
+  "name": "Jiomosa - Cloud Website Renderer",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+  
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "dockerDashComposeVersion": "v2"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    },
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "installOhMyZsh": true,
+      "upgradePackages": true
+    }
+  },
+  
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-azuretools.vscode-docker",
+        "redhat.vscode-yaml"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": true,
+        "python.formatting.provider": "black",
+        "files.watcherExclude": {
+          "**/node_modules/**": true,
+          "**/.git/objects/**": true,
+          "**/.git/subtree-cache/**": true,
+          "**/postgres-data/**": true
+        }
+      }
+    }
+  },
+  
+  "forwardPorts": [
+    5000,
+    8080,
+    4444,
+    5900,
+    7900
+  ],
+  
+  "portsAttributes": {
+    "5000": {
+      "label": "Renderer API",
+      "protocol": "http",
+      "onAutoForward": "notify"
+    },
+    "8080": {
+      "label": "Guacamole Web",
+      "protocol": "http",
+      "onAutoForward": "silent"
+    },
+    "4444": {
+      "label": "Selenium Grid",
+      "protocol": "http",
+      "onAutoForward": "silent"
+    },
+    "5900": {
+      "label": "VNC Server",
+      "protocol": "http",
+      "onAutoForward": "silent"
+    },
+    "7900": {
+      "label": "noVNC Web Interface",
+      "protocol": "http",
+      "onAutoForward": "notify"
+    }
+  },
+  
+  "postCreateCommand": "bash .devcontainer/post-create-command.sh",
+  
+  "remoteUser": "vscode",
+  
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+  ],
+  
+  "runArgs": [
+    "--init"
+  ],
+  
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "32gb"
+  }
+}

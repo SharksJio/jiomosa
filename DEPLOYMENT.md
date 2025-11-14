@@ -186,7 +186,57 @@ az container create \
 
 ### 3. Free Cloud Testing Options
 
-#### Option A: Play with Docker (Free, No Setup)
+#### Option A: GitHub Codespaces (Recommended - Best Free Option)
+
+**Access**: https://github.com/SharksJio/jiomosa
+
+**Why use Codespaces?**
+- ✅ Automatic setup with devcontainer
+- ✅ VS Code environment in the browser
+- ✅ Port forwarding built-in
+- ✅ Easy external website testing
+- ✅ No local Docker installation needed
+
+**Steps**:
+1. Go to https://github.com/SharksJio/jiomosa
+2. Click green **"Code"** button → **"Codespaces"** tab
+3. Click **"Create codespace on main"**
+4. Wait 3-5 minutes for automatic setup
+5. Once ready, run in the terminal:
+```bash
+docker compose up -d
+```
+6. Access services via **PORTS** tab in VS Code:
+   - Click port **7900** to view rendered browsers
+   - Click port **5000** to access the API
+
+**Testing External Websites**:
+```bash
+# Run comprehensive external website tests
+bash tests/test_external_websites.sh
+
+# Or test specific sites
+curl -X POST http://localhost:5000/api/session/create \
+  -d '{"session_id": "test"}'
+curl -X POST http://localhost:5000/api/session/test/load \
+  -d '{"url": "https://github.com"}'
+# View at port 7900
+```
+
+**Making Ports Public** (for external device testing):
+1. In VS Code **PORTS** tab, right-click port **7900**
+2. Select **Port Visibility** → **Public**
+3. Copy the URL and access from any device (phone, tablet, IoT device)
+4. This simulates the real use case of low-end devices accessing rendered content!
+
+**Free Tier**:
+- 120 core-hours/month (60 hours on 2-core, 30 hours on 4-core)
+- Auto-stops after 30 minutes of inactivity
+- Delete unused Codespaces to save quota
+
+**Complete Guide**: See [CODESPACES.md](CODESPACES.md) for comprehensive instructions
+
+#### Option B: Play with Docker (Free, No Setup)
 
 **Access**: https://labs.play-with-docker.com/
 
@@ -205,21 +255,7 @@ docker compose up -d
 - 4-hour session limit
 - Need to restart after timeout
 - Slower performance
-
-#### Option B: GitHub Codespaces (Free tier available)
-
-**Steps**:
-1. Go to https://github.com/SharksJio/jiomosa
-2. Click "Code" → "Codespaces" → "Create codespace"
-3. In the terminal:
-```bash
-docker compose up -d
-```
-4. Access via forwarded ports in VS Code
-
-**Limitations**:
-- 60 hours/month free (for 2-core machine)
-- Requires GitHub account
+- Less convenient than Codespaces
 
 ### 4. Kubernetes Deployment (Production)
 
