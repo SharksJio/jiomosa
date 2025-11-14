@@ -1,11 +1,11 @@
 -- Guacamole database initialization script
--- This is a minimal schema for basic Guacamole functionality
+-- Downloads and installs the official Guacamole PostgreSQL schema
 
--- Create schema
-CREATE SCHEMA IF NOT EXISTS guacamole;
+-- Download and install the main schema
+\! curl -s https://raw.githubusercontent.com/apache/guacamole-client/master/extensions/guacamole-auth-jdbc/modules/guacamole-auth-jdbc-postgresql/schema/001-create-schema.sql | psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
 
--- Note: For a production setup, you should use the official Guacamole schema
--- This can be obtained from: https://github.com/apache/guacamole-client/tree/master/extensions/guacamole-auth-jdbc/modules/guacamole-auth-jdbc-postgresql/schema
+-- Download and install the default admin user
+\! curl -s https://raw.githubusercontent.com/apache/guacamole-client/master/extensions/guacamole-auth-jdbc/modules/guacamole-auth-jdbc-postgresql/schema/002-create-admin-user.sql | psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
 
--- For this PoC, the Guacamole container will auto-initialize if needed
--- This file serves as a placeholder for custom initialization if required
+-- Note: Default login credentials are username: guacadmin, password: guacadmin
+-- Change these immediately after first login for security
