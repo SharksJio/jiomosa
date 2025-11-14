@@ -14,6 +14,9 @@ Jiomosa enables rendering of complex, resource-intensive websites on powerful cl
 - **Scalable**: Docker-based architecture that can be deployed anywhere
 - **Easy Testing**: Built-in CI/CD pipeline for automated testing
 - **Multiple Sessions**: Support for concurrent browser sessions
+- **Session Keepalive**: Maintain browser sessions with heartbeat signals
+- **HTML5 Framebuffer Viewer**: Stream browser frames through HTML5 interface for WebView embedding
+- **ThreadX Integration**: Perfect for embedded systems with WebView support
 
 ## 🏗️ Architecture
 
@@ -152,6 +155,30 @@ curl http://localhost:5000/api/session/my_session/info
 curl -X POST http://localhost:5000/api/session/my_session/close
 ```
 
+### Using the HTML5 Framebuffer Viewer (ThreadX Integration)
+
+For embedded systems and ThreadX apps with WebView support:
+
+```bash
+# 1. Create session and load URL (same as above)
+curl -X POST http://localhost:5000/api/session/create \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "threadx_session"}'
+
+curl -X POST http://localhost:5000/api/session/threadx_session/load \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com"}'
+
+# 2. Access the HTML5 viewer in your WebView
+# URL: http://localhost:5000/api/session/threadx_session/viewer
+# This displays a framebuffer stream that auto-refreshes
+
+# 3. Send keepalive to maintain the session
+curl -X POST http://localhost:5000/api/session/threadx_session/keepalive
+```
+
+📖 **Detailed guide**: See [KEEPALIVE_FRAMEBUFFER.md](KEEPALIVE_FRAMEBUFFER.md) for ThreadX integration examples
+
 ## 📡 API Endpoints
 
 ### Service Information
@@ -163,8 +190,14 @@ curl -X POST http://localhost:5000/api/session/my_session/close
 - `POST /api/session/create` - Create a new browser session
 - `POST /api/session/{id}/load` - Load a URL in a session
 - `GET /api/session/{id}/info` - Get session information
+- `POST /api/session/{id}/keepalive` - Send keepalive signal to maintain session
 - `POST /api/session/{id}/close` - Close a session
 - `GET /api/sessions` - List all active sessions
+
+### Framebuffer & Viewer (New)
+- `GET /api/session/{id}/frame` - Get current browser frame as PNG image
+- `GET /api/session/{id}/frame/data` - Get current browser frame as base64 JSON
+- `GET /api/session/{id}/viewer` - HTML5 viewer page for framebuffer streaming
 
 ## 🧪 Testing
 
@@ -246,6 +279,8 @@ You can customize the configuration by modifying `docker-compose.yml` or setting
 - `GUACD_PORT` - Guacamole daemon port (default: 4822)
 - `VNC_HOST` - VNC server hostname (default: chrome)
 - `VNC_PORT` - VNC server port (default: 5900)
+- `SESSION_TIMEOUT` - Session timeout in seconds (default: 300)
+- `FRAME_CAPTURE_INTERVAL` - Frame capture interval in seconds (default: 1.0)
 
 **Guacamole:**
 - `POSTGRES_DATABASE` - Database name
@@ -343,11 +378,13 @@ Workflow triggers:
 
 For optimal performance on low-end clients:
 
-1. **Reduce Resolution**: Lower the browser window size
+1. **Reduce Resolution**: Lower the browser window size for smaller frames
 2. **Compression**: Enable Guacamole's compression settings
-3. **Frame Rate**: Adjust VNC frame rate limits
+3. **Frame Rate**: Adjust frame capture interval (FRAME_CAPTURE_INTERVAL env var)
 4. **Network**: Use local network deployment for minimal latency
 5. **Browser Settings**: Disable unnecessary browser features
+6. **Session Management**: Use keepalive to maintain sessions without recreating
+7. **Framebuffer Streaming**: Use HTML5 viewer for lower overhead than VNC
 
 ## 🤝 Contributing
 
@@ -372,6 +409,7 @@ This project is provided as-is for educational and demonstration purposes.
 ## 💡 Future Enhancements
 
 - [ ] WebRTC support for lower latency
+- [ ] WebSocket-based frame streaming
 - [ ] Mobile-optimized streaming
 - [ ] Multi-user collaboration
 - [ ] Recording and playback
@@ -379,6 +417,8 @@ This project is provided as-is for educational and demonstration purposes.
 - [ ] Load balancing across multiple browser nodes
 - [ ] Kubernetes deployment manifests
 - [ ] Custom browser profiles and extensions
+- [ ] JPEG frame format for smaller sizes
+- [ ] Adaptive frame rate based on content changes
 
 ## 📞 Support
 
