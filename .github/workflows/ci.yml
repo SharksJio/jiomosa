@@ -84,6 +84,24 @@ jobs:
         run: |
           bash tests/test_websites.sh
       
+      - name: Check for uncommitted changes
+        run: |
+          echo "Checking for uncommitted changes..."
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "❌ ERROR: Uncommitted changes detected!"
+            echo ""
+            echo "The following files have uncommitted changes:"
+            git status --short
+            echo ""
+            echo "Git diff:"
+            git --no-pager diff
+            echo ""
+            echo "Please commit these changes or update .gitignore if they should be excluded."
+            exit 1
+          else
+            echo "✓ No uncommitted changes detected"
+          fi
+      
       - name: Show service logs on failure
         if: failure()
         run: |
