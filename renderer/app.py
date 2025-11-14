@@ -5,13 +5,16 @@ A service that coordinates Selenium browser sessions with Guacamole for remote r
 import os
 import logging
 import time
-from flask import Flask, jsonify, request
+import base64
+import threading
+from flask import Flask, jsonify, request, send_file, render_template_string
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
+from io import BytesIO
 
 # Configure logging
 logging.basicConfig(
@@ -29,9 +32,14 @@ GUACD_HOST = os.getenv('GUACD_HOST', 'guacd')
 GUACD_PORT = os.getenv('GUACD_PORT', '4822')
 VNC_HOST = os.getenv('VNC_HOST', 'chrome')
 VNC_PORT = os.getenv('VNC_PORT', '5900')
+SESSION_TIMEOUT = int(os.getenv('SESSION_TIMEOUT', '300'))  # 5 minutes default
+FRAME_CAPTURE_INTERVAL = float(os.getenv('FRAME_CAPTURE_INTERVAL', '1.0'))  # 1 second default
 
 # Store active sessions
 active_sessions = {}
+
+# Session cleanup thread
+cleanup_thread = None
 
 
 class BrowserSession:
@@ -42,6 +50,9 @@ class BrowserSession:
         self.driver = None
         self.created_at = time.time()
         self.last_activity = time.time()
+        self.last_frame = None
+        self.frame_capture_active = False
+        self.frame_lock = threading.Lock()
         
     def initialize(self):
         """Initialize the Selenium WebDriver"""
@@ -112,6 +123,39 @@ class BrowserSession:
             logger.error(f"Error getting page info: {e}")
             return None
     
+    def keepalive(self):
+        """Update last activity timestamp to keep session alive"""
+        self.last_activity = time.time()
+        logger.info(f"Keepalive received for session {self.session_id}")
+        return True
+    
+    def is_expired(self, timeout=SESSION_TIMEOUT):
+        """Check if session has expired based on inactivity"""
+        return (time.time() - self.last_activity) > timeout
+    
+    def capture_frame(self):
+        """Capture current browser frame as PNG screenshot"""
+        try:
+            if not self.driver:
+                return None
+            
+            # Capture screenshot as PNG
+            screenshot = self.driver.get_screenshot_as_png()
+            
+            with self.frame_lock:
+                self.last_frame = screenshot
+                self.last_activity = time.time()
+            
+            return screenshot
+        except Exception as e:
+            logger.error(f"Error capturing frame: {e}")
+            return None
+    
+    def get_last_frame(self):
+        """Get the last captured frame"""
+        with self.frame_lock:
+            return self.last_frame
+    
     def close(self):
         """Close the browser session"""
         try:
@@ -120,6 +164,29 @@ class BrowserSession:
                 logger.info(f"Browser session {self.session_id} closed")
         except Exception as e:
             logger.error(f"Error closing browser session: {e}")
+
+
+def cleanup_expired_sessions():
+    """Background task to clean up expired sessions"""
+    while True:
+        try:
+            time.sleep(60)  # Check every minute
+            expired_sessions = []
+            
+            for session_id, session in active_sessions.items():
+                if session.is_expired():
+                    expired_sessions.append(session_id)
+            
+            for session_id in expired_sessions:
+                logger.info(f"Cleaning up expired session: {session_id}")
+                try:
+                    session = active_sessions[session_id]
+                    session.close()
+                    del active_sessions[session_id]
+                except Exception as e:
+                    logger.error(f"Error cleaning up session {session_id}: {e}")
+        except Exception as e:
+            logger.error(f"Error in cleanup thread: {e}")
 
 
 @app.route('/health', methods=['GET'])
@@ -147,14 +214,22 @@ def info():
             'session_create': '/api/session/create',
             'session_load': '/api/session/<session_id>/load',
             'session_info': '/api/session/<session_id>/info',
+            'session_keepalive': '/api/session/<session_id>/keepalive',
             'session_close': '/api/session/<session_id>/close',
             'sessions_list': '/api/sessions',
+            'session_frame': '/api/session/<session_id>/frame',
+            'session_frame_data': '/api/session/<session_id>/frame/data',
+            'session_viewer': '/api/session/<session_id>/viewer',
             'vnc_info': '/api/vnc/info'
         },
         'vnc_connection': {
             'host': VNC_HOST,
             'port': VNC_PORT,
             'web_interface': f'http://chrome:7900'
+        },
+        'session_config': {
+            'timeout': SESSION_TIMEOUT,
+            'frame_capture_interval': FRAME_CAPTURE_INTERVAL
         }
     }), 200
 
@@ -311,6 +386,308 @@ def list_sessions():
         return jsonify({'error': 'Failed to list sessions'}), 500
 
 
+@app.route('/api/session/<session_id>/keepalive', methods=['POST'])
+def keepalive_session(session_id):
+    """Send keepalive signal to maintain session"""
+    try:
+        if session_id not in active_sessions:
+            return jsonify({
+                'error': 'Session not found',
+                'session_id': session_id
+            }), 404
+        
+        session = active_sessions[session_id]
+        session.keepalive()
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'last_activity': session.last_activity,
+            'message': 'Keepalive successful'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error sending keepalive: {e}")
+        return jsonify({'error': 'Failed to send keepalive'}), 500
+
+
+@app.route('/api/session/<session_id>/frame', methods=['GET'])
+def get_frame(session_id):
+    """Get current frame/screenshot from browser session"""
+    try:
+        if session_id not in active_sessions:
+            return jsonify({
+                'error': 'Session not found',
+                'session_id': session_id
+            }), 404
+        
+        session = active_sessions[session_id]
+        frame = session.capture_frame()
+        
+        if frame is None:
+            return jsonify({'error': 'Failed to capture frame'}), 500
+        
+        # Return image directly
+        return send_file(
+            BytesIO(frame),
+            mimetype='image/png',
+            as_attachment=False,
+            download_name=f'{session_id}_frame.png'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting frame: {e}")
+        return jsonify({'error': 'Failed to get frame'}), 500
+
+
+@app.route('/api/session/<session_id>/frame/data', methods=['GET'])
+def get_frame_data(session_id):
+    """Get current frame as base64 encoded data"""
+    try:
+        if session_id not in active_sessions:
+            return jsonify({
+                'error': 'Session not found',
+                'session_id': session_id
+            }), 404
+        
+        session = active_sessions[session_id]
+        frame = session.capture_frame()
+        
+        if frame is None:
+            return jsonify({'error': 'Failed to capture frame'}), 500
+        
+        # Return as JSON with base64 encoded image
+        frame_b64 = base64.b64encode(frame).decode('utf-8')
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'timestamp': time.time(),
+            'frame': frame_b64,
+            'format': 'png'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting frame data: {e}")
+        return jsonify({'error': 'Failed to get frame data'}), 500
+
+
+@app.route('/api/session/<session_id>/viewer', methods=['GET'])
+def viewer(session_id):
+    """HTML5 viewer page for framebuffer streaming"""
+    html_template = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Jiomosa HTML5 Viewer - {{ session_id }}</title>
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                background-color: #1a1a1a;
+                font-family: Arial, sans-serif;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+            }
+            .container {
+                max-width: 100%;
+                padding: 20px;
+            }
+            .header {
+                color: #fff;
+                text-align: center;
+                margin-bottom: 20px;
+            }
+            .viewer {
+                border: 2px solid #333;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+                background-color: #000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 400px;
+            }
+            #frame {
+                max-width: 100%;
+                height: auto;
+                display: block;
+            }
+            .status {
+                color: #888;
+                text-align: center;
+                margin-top: 10px;
+                font-size: 14px;
+            }
+            .controls {
+                text-align: center;
+                margin-top: 20px;
+            }
+            button {
+                background-color: #4CAF50;
+                border: none;
+                color: white;
+                padding: 10px 20px;
+                text-align: center;
+                text-decoration: none;
+                display: inline-block;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+                border-radius: 4px;
+            }
+            button:hover {
+                background-color: #45a049;
+            }
+            button.stop {
+                background-color: #f44336;
+            }
+            button.stop:hover {
+                background-color: #da190b;
+            }
+            .info {
+                color: #ccc;
+                text-align: center;
+                margin-top: 10px;
+                font-size: 12px;
+            }
+            .loading {
+                color: #fff;
+                font-size: 18px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Jiomosa HTML5 Viewer</h1>
+                <p>Session: <strong>{{ session_id }}</strong></p>
+            </div>
+            <div class="viewer">
+                <img id="frame" src="" alt="Loading browser frame..." />
+                <div id="loading" class="loading">Loading...</div>
+            </div>
+            <div class="status">
+                <span id="status">Initializing...</span>
+            </div>
+            <div class="controls">
+                <button id="startBtn" onclick="startStreaming()">Start</button>
+                <button id="stopBtn" class="stop" onclick="stopStreaming()">Stop</button>
+                <button onclick="captureFrame()">Capture Frame</button>
+            </div>
+            <div class="info">
+                <p>FPS: <span id="fps">0</span> | Last Update: <span id="lastUpdate">-</span></p>
+                <p>This viewer streams browser frames from the cloud to your ThreadX app WebView</p>
+            </div>
+        </div>
+        
+        <script>
+            const sessionId = "{{ session_id }}";
+            let streamingInterval = null;
+            let frameCount = 0;
+            let lastFpsUpdate = Date.now();
+            let isStreaming = false;
+            
+            const frameImg = document.getElementById('frame');
+            const loadingDiv = document.getElementById('loading');
+            const statusSpan = document.getElementById('status');
+            const fpsSpan = document.getElementById('fps');
+            const lastUpdateSpan = document.getElementById('lastUpdate');
+            
+            async function captureFrame() {
+                try {
+                    const response = await fetch(`/api/session/${sessionId}/frame?t=${Date.now()}`);
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch frame');
+                    }
+                    
+                    const blob = await response.blob();
+                    const imageUrl = URL.createObjectURL(blob);
+                    
+                    frameImg.src = imageUrl;
+                    frameImg.style.display = 'block';
+                    loadingDiv.style.display = 'none';
+                    
+                    updateStatus('Frame captured');
+                    updateLastUpdate();
+                    updateFPS();
+                    
+                    // Send keepalive
+                    await fetch(`/api/session/${sessionId}/keepalive`, {
+                        method: 'POST'
+                    });
+                    
+                } catch (error) {
+                    console.error('Error capturing frame:', error);
+                    updateStatus('Error: ' + error.message);
+                }
+            }
+            
+            function startStreaming() {
+                if (isStreaming) return;
+                
+                isStreaming = true;
+                updateStatus('Streaming...');
+                
+                // Capture immediately
+                captureFrame();
+                
+                // Then capture every second
+                streamingInterval = setInterval(captureFrame, 1000);
+            }
+            
+            function stopStreaming() {
+                if (!isStreaming) return;
+                
+                isStreaming = false;
+                if (streamingInterval) {
+                    clearInterval(streamingInterval);
+                    streamingInterval = null;
+                }
+                updateStatus('Streaming stopped');
+            }
+            
+            function updateStatus(message) {
+                statusSpan.textContent = message;
+            }
+            
+            function updateLastUpdate() {
+                const now = new Date();
+                lastUpdateSpan.textContent = now.toLocaleTimeString();
+            }
+            
+            function updateFPS() {
+                frameCount++;
+                const now = Date.now();
+                const elapsed = now - lastFpsUpdate;
+                
+                if (elapsed >= 1000) {
+                    const fps = Math.round(frameCount / (elapsed / 1000));
+                    fpsSpan.textContent = fps;
+                    frameCount = 0;
+                    lastFpsUpdate = now;
+                }
+            }
+            
+            // Auto-start streaming on page load
+            window.addEventListener('load', () => {
+                setTimeout(startStreaming, 500);
+            });
+            
+            // Cleanup on page unload
+            window.addEventListener('beforeunload', () => {
+                stopStreaming();
+            });
+        </script>
+    </body>
+    </html>
+    """
+    
+    return render_template_string(html_template, session_id=session_id)
+
+
 @app.route('/api/vnc/info', methods=['GET'])
 def vnc_info():
     """Get VNC connection information"""
@@ -329,6 +706,13 @@ if __name__ == '__main__':
     logger.info(f"Selenium: {SELENIUM_HOST}:{SELENIUM_PORT}")
     logger.info(f"Guacamole: {GUACD_HOST}:{GUACD_PORT}")
     logger.info(f"VNC: {VNC_HOST}:{VNC_PORT}")
+    logger.info(f"Session Timeout: {SESSION_TIMEOUT} seconds")
+    logger.info(f"Frame Capture Interval: {FRAME_CAPTURE_INTERVAL} seconds")
+    
+    # Start cleanup thread
+    cleanup_thread = threading.Thread(target=cleanup_expired_sessions, daemon=True)
+    cleanup_thread.start()
+    logger.info("Session cleanup thread started")
     
     # Debug mode disabled for security - use environment variable to enable if needed
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
