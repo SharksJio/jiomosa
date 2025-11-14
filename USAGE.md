@@ -37,8 +37,9 @@ curl -X POST http://localhost:5000/api/session/demo/load \
   -d '{"url": "https://example.com"}'
 
 # 3. View the rendered page
-# Open http://localhost:7900 in your browser
-# Or use a VNC client: vnc://localhost:5900
+# Option A: Web browser (noVNC) - http://localhost:7900
+# Option B: VNC client - vnc://localhost:5900  
+# Option C: Guacamole web interface - http://localhost:8080/guacamole/
 
 # 4. Close when done
 curl -X POST http://localhost:5000/api/session/demo/close
@@ -327,15 +328,64 @@ docker compose up -d
 ### Cannot Connect to VNC
 
 ```bash
-# Verify VNC port is exposed
+# Verify VNC ports are exposed
 docker port jiomosa-chrome
 
-# Test VNC connection
-nc -zv localhost 5900
+# Test noVNC web interface (port 7900)
+curl -I http://localhost:7900/
 
-# Check Chrome container
+# Test raw VNC protocol (port 5900) - should not return HTTP
+curl --connect-timeout 5 localhost:5900
+
+# Check Chrome container logs
 docker logs jiomosa-chrome
+
+# Note: Port 5900 is for VNC clients only, not web browsers
+# Use port 7900 for web browser access via noVNC
 ```
+
+### Guacamole Not Working (404 or Login Errors)
+
+```bash
+# Check if Guacamole is accessible at the correct path
+curl -I http://localhost:8080/guacamole/
+
+# If you get 404, the service might not be started properly
+docker logs jiomosa-guacamole --tail 20
+
+# Check if database is properly initialized
+docker exec jiomosa-postgres psql -U guacamole_user -d guacamole_db -c "SELECT COUNT(*) FROM guacamole_user;"
+
+# If the tables are missing, rebuild the volume and let the init scripts re-run
+docker compose down -v
+docker compose up -d postgres
+sleep 10
+docker compose up -d
+
+# Schema files live under scripts/guacamole-init and include the default admin user.
+# Default login: username=guacadmin, password=guacadmin
+```
+
+### Guacamole "Unexpected Internal Error" on Login
+
+If you see "An error has occurred and this action cannot be completed" when accessing Guacamole, the web app could not log in to PostgreSQL (usually because the password was missing).
+
+1. Confirm the Guacamole service receives the `POSTGRESQL_*` variables:
+    ```bash
+    docker compose config | grep -A3 POSTGRESQL_
+    ```
+2. Restart only the Guacamole container so it reloads the credentials:
+    ```bash
+    docker compose up -d guacamole
+    ```
+3. Verify login via API (HTTP 200 returns an auth token):
+    ```bash
+    curl -s -X POST http://localhost:8080/guacamole/api/tokens \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      -d "username=guacadmin&password=guacadmin"
+    ```
+
+If you still hit errors after resetting the credentials, the noVNC interface at `http://localhost:7900/` remains a functional fallback.
 
 ### Session Creation Fails
 
