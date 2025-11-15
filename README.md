@@ -17,6 +17,7 @@ Jiomosa enables rendering of complex, resource-intensive websites on powerful cl
 - **Session Keepalive**: Maintain browser sessions with heartbeat signals
 - **HTML5 Framebuffer Viewer**: Stream browser frames through HTML5 interface for WebView embedding
 - **ThreadX Integration**: Perfect for embedded systems with WebView support
+- **Device Simulator**: Test device emulator for demonstrating website rendering in apps
 
 ## 🏗️ Architecture
 
@@ -179,6 +180,56 @@ curl -X POST http://localhost:5000/api/session/threadx_session/keepalive
 
 📖 **Detailed guide**: See [KEEPALIVE_FRAMEBUFFER.md](KEEPALIVE_FRAMEBUFFER.md) for ThreadX integration examples
 
+## 🖥️ Device Simulator (Test App)
+
+The Device Simulator is a standalone test application that emulates low-end devices to demonstrate how websites can be rendered inside an app **without showing any browser UI**. Perfect for testing and demonstrating ThreadX, IoT, and embedded system integrations.
+
+### Key Features
+- **Multiple Device Profiles**: Simulate ThreadX RTOS (512MB), IoT devices (256MB), thin clients, and legacy systems
+- **WebView-Only Display**: Shows only website content, no browser chrome or UI
+- **Interactive Testing**: Easy controls to load URLs and test different scenarios
+- **Real-time Streaming**: Uses HTML5 framebuffer streaming
+- **Session Management**: Built-in session creation and management
+
+### Quick Start with Device Simulator
+
+```bash
+# 1. Ensure Jiomosa is running
+docker compose up -d
+
+# 2. Start the device simulator
+cd device_simulator
+./run_simulator.sh
+
+# 3. Open your browser to:
+http://localhost:8000
+
+# 4. In the simulator UI:
+#    - Click "New Session"
+#    - Enter a URL (or use quick actions)
+#    - Click "Load Website"
+#    - Watch the website render in the device screen!
+```
+
+### Available Device Profiles
+
+| Profile | Screen Size | RAM | Use Case |
+|---------|-------------|-----|----------|
+| ThreadX RTOS | 1024x600 | 512MB | Embedded devices, industrial controllers |
+| IoT Device | 800x480 | 256MB | Smart home, constrained IoT |
+| Thin Client | 1280x720 | 1GB | Kiosks, workstations |
+| Legacy System | 1366x768 | 2GB | Older computers |
+
+### Why Use the Device Simulator?
+
+1. **No Browser UI**: Unlike VNC, shows only the website content
+2. **Easy Testing**: Visual way to test how websites look on different devices
+3. **Integration Demo**: Perfect for demonstrating embedded system integrations
+4. **Development**: Test your app integration before deploying to real hardware
+5. **Presentation**: Show stakeholders how the solution works
+
+📖 **Detailed guide**: See [device_simulator/README.md](device_simulator/README.md) for complete documentation
+
 ## 📡 API Endpoints
 
 ### Service Information
@@ -214,6 +265,11 @@ bash tests/test_websites.sh
 
 # Run comprehensive external website tests (20+ websites)
 bash tests/test_external_websites.sh
+
+# Test device simulator (requires simulator to be running)
+cd device_simulator && ./run_simulator.sh &
+sleep 10
+python ../tests/test_device_simulator.py
 
 # Stop services
 docker compose down
@@ -323,11 +379,19 @@ jiomosa/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── app.py              # Flask API application
+├── device_simulator/        # Device simulator for testing
+│   ├── simulator.py        # Main simulator app
+│   ├── requirements.txt
+│   ├── run_simulator.sh    # Launcher script
+│   └── README.md           # Simulator documentation
 ├── scripts/                # Database and setup scripts
 │   └── initdb.sql
 ├── tests/                  # Integration tests
 │   ├── test_renderer.py
+│   ├── test_device_simulator.py
 │   └── test_websites.sh
+├── examples/               # Example usage scripts
+│   └── python_client.py
 ├── .github/
 │   └── workflows/
 │       └── ci.yml          # CI/CD pipeline
