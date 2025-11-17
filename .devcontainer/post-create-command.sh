@@ -14,6 +14,10 @@ echo "Installing Python dependencies..."
 pip install --upgrade pip
 pip install requests pytest
 
+# Fix Docker socket permissions
+echo "Fixing Docker socket permissions..."
+sudo chmod 666 /var/run/docker.sock || echo "Warning: Could not change Docker socket permissions"
+
 # Verify Docker is available
 echo "Verifying Docker installation..."
 docker --version

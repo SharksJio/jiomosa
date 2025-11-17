@@ -79,6 +79,8 @@
   
   "postCreateCommand": "bash .devcontainer/post-create-command.sh",
   
+  "postStartCommand": "sudo chmod 666 /var/run/docker.sock 2>/dev/null || true",
+  
   "remoteUser": "vscode",
   
   "mounts": [
