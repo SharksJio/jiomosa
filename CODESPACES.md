@@ -58,11 +58,10 @@ In VS Code, go to the **PORTS** tab (bottom panel) to see forwarded ports:
 
 | Port | Service | Access |
 |------|---------|--------|
-| 5000 | Renderer API | Click globe icon to open |
-| 7900 | noVNC Browser View | Click globe icon to open |
-| 8080 | Guacamole Web | Click globe icon to open |
+| 5000 | Renderer API (WebSocket + REST) | Click globe icon to open |
+| 9000 | Android WebApp | Click globe icon to open |
+| 7900 | noVNC (optional debugging) | Click globe icon to open |
 | 4444 | Selenium Grid | For debugging |
-| 5900 | VNC Server | For VNC clients |
 
 **Tip:** Make ports **Public** in the Ports tab to access from external devices or share with others.
 

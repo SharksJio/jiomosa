@@ -6,7 +6,7 @@ Get Jiomosa up and running in 5 minutes!
 
 - Docker and Docker Compose installed
 - 4GB+ RAM available
-- Ports 5000, 8080, 4444, 5900, 7900 available
+- Ports 5000, 9000, 4444, 7900 available
 
 ## Installation Steps
 
@@ -24,11 +24,9 @@ docker compose up -d
 ```
 
 This will start:
-- Renderer Service (API)
-- Selenium Chrome (with VNC)
-- Guacamole Server
-- Guacamole Web Client
-- PostgreSQL Database
+- Renderer Service (WebSocket + REST API)
+- Android WebApp (Mobile UI)
+- Selenium Chrome (with optional noVNC)
 
 ### 3. Wait for Services to Initialize
 
@@ -45,7 +43,8 @@ Expected response:
 {
   "status": "healthy",
   "service": "jiomosa-renderer",
-  "active_sessions": 0
+  "active_sessions": 0,
+  "websocket": "enabled"
 }
 ```
 
@@ -65,7 +64,8 @@ curl -X POST http://localhost:5000/api/session/my_first_session/load \
   -d '{"url": "https://example.com"}'
 
 # 3. View the rendered page
-# Open in your browser: http://localhost:7900/?autoconnect=1&resize=scale&password=secret
+# Open Android WebApp in browser: http://localhost:9000
+# Or use noVNC for debugging: http://localhost:7900/?autoconnect=1&resize=scale&password=secret
 ```
 
 ### Using the Demo Script
@@ -79,22 +79,26 @@ curl -X POST http://localhost:5000/api/session/my_first_session/load \
 
 You have three options to view the rendered browser:
 
-### Option 1: noVNC Web Interface (Easiest)
-Open in your browser:
+### Option 1: Android WebApp (Recommended)
+Open in your browser - includes WebSocket streaming:
+```
+http://localhost:9000
+```
+
+### Option 2: noVNC Web Interface (For Debugging)
+Direct browser viewing:
 ```
 http://localhost:7900/?autoconnect=1&resize=scale&password=secret
 ```
 
-### Option 2: VNC Client
-Use any VNC client:
-```
-Server: localhost:5900
-Password: secret
-```
-
-### Option 3: Guacamole Web Client
-```
-http://localhost:8080/guacamole/
+### Option 3: WebSocket Streaming (Advanced)
+Connect your own Socket.IO client:
+```javascript
+const socket = io('http://localhost:5000');
+socket.emit('subscribe', { session_id: 'my_first_session' });
+socket.on('frame', (data) => {
+    // Display frame data
+});
 ```
 
 ## Test Multiple Websites

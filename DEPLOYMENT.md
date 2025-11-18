@@ -30,10 +30,10 @@ curl http://localhost:5000/health
 ```
 
 **Access Points**:
-- Renderer API: http://localhost:5000
-- VNC Web Viewer: http://localhost:7900 (password: secret)
-- Guacamole: http://localhost:8080/guacamole/
+- Renderer API (WebSocket + REST): http://localhost:5000
+- Android WebApp: http://localhost:9000
 - Selenium Grid: http://localhost:4444
+- noVNC (optional, for direct browser viewing): http://localhost:7900 (password: secret)
 
 **Test a website**:
 ```bash
@@ -47,7 +47,11 @@ curl -X POST http://localhost:5000/api/session/test1/load \
   -H "Content-Type: application/json" \
   -d '{"url": "https://www.google.com"}'
 
-# View at: http://localhost:7900
+# Option A: Use Android WebApp (recommended)
+# Open http://localhost:9000 in browser
+
+# Option B: View via noVNC (optional, for debugging)
+# Open http://localhost:7900 in browser
 ```
 
 ### 2. Cloud VM Deployment (Recommended for Remote Testing)
@@ -84,8 +88,8 @@ docker compose up -d
 
 # 5. Configure firewall
 sudo ufw allow 5000
+sudo ufw allow 9000
 sudo ufw allow 7900
-sudo ufw allow 8080
 ```
 
 **Access from anywhere**:
@@ -398,24 +402,17 @@ done
 
 ## Viewing Rendered Websites
 
-### Option 1: Web Browser (noVNC)
+### Option 1: Android WebApp (Recommended)
+- URL: `http://YOUR_SERVER_IP:9000`
+- **Best for**: Production use, mobile-friendly interface
+- **Features**: WebSocket streaming at 30 FPS, app launcher, interactive input
+- **Screenshot**: Mobile-optimized interface with popular website shortcuts
+
+### Option 2: Web Browser (noVNC - Optional)
 - URL: `http://YOUR_SERVER_IP:7900`
 - Password: `secret`
-- **Best for**: Quick viewing, no client installation needed
+- **Best for**: Debugging, direct browser viewing
 - **Screenshot**: Shows browser interface directly in your web browser
-
-### Option 2: VNC Client (Better Quality)
-- Server: `YOUR_SERVER_IP:5900`
-- Password: `secret`
-- **Recommended clients**:
-  - **Windows**: TightVNC, RealVNC
-  - **Mac**: Built-in Screen Sharing (⌘K in Finder)
-  - **Linux**: Remmina, TigerVNC
-- **Best for**: Better quality, lower latency, local viewing
-
-### Option 3: Guacamole Web Interface
-- URL: `http://YOUR_SERVER_IP:8080/guacamole/`
-- **Best for**: Advanced features, session management
 
 ## Testing from Low-End Devices
 

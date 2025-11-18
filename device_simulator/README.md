@@ -182,7 +182,7 @@ export PORT=8080
 ┌─────────────────────────────────────────────┐
 │       Selenium Grid + Chrome Browser        │
 │  - Render actual websites                   │
-│  - Provide display via VNC                  │
+│  - Capture screenshots for streaming        │
 └─────────────────────────────────────────────┘
 ```
 
@@ -337,7 +337,7 @@ Simulator itself is lightweight:
 Heavy lifting done by Jiomosa server:
 - Chrome browser: ~200-500MB RAM
 - Selenium: ~100MB RAM
-- Guacamole/VNC: ~50MB RAM
+- Renderer WebSocket: ~50MB RAM
 
 ### Latency
 
@@ -516,17 +516,17 @@ jobs:
 - Use HTTPS in production environments
 - Implement access controls for multi-user scenarios
 
-## Comparison with Direct VNC Access
+## Comparison with Direct noVNC Access
 
-| Feature | Device Simulator | Direct VNC |
+| Feature | Device Simulator | Direct noVNC |
 |---------|-----------------|------------|
 | Browser UI visible | No ❌ | Yes ✅ |
 | Setup complexity | Simple ✅ | Complex ❌ |
-| Client requirements | Web browser only | VNC client needed |
+| Client requirements | Web browser only | noVNC client needed |
 | Device emulation | Yes ✅ | No ❌ |
 | Testing scenarios | Multiple profiles | Single view |
-| Integration | Easy (HTTP/iframe) | Harder (VNC protocol) |
-| Bandwidth | Lower | Higher |
+| Integration | Easy (HTTP/iframe) | Harder (noVNC protocol) |
+| Bandwidth | Lower (WebSocket) | Higher |
 | User experience | Cleaner | Raw desktop |
 
 ## Future Enhancements

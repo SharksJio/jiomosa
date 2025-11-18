@@ -111,9 +111,19 @@ class JiomosaClient:
         response.raise_for_status()
         return response.json()
     
-    def get_vnc_info(self) -> Dict[str, Any]:
-        """Get VNC connection information"""
-        response = self.session.get(f"{self.base_url}/api/vnc/info")
+    def keepalive_session(self, session_id: str) -> Dict[str, Any]:
+        """
+        Send keepalive signal to maintain session
+        
+        Args:
+            session_id: ID of the session
+            
+        Returns:
+            Keepalive response
+        """
+        response = self.session.post(
+            f"{self.base_url}/api/session/{session_id}/keepalive"
+        )
         response.raise_for_status()
         return response.json()
 
@@ -158,15 +168,17 @@ def demo_basic_usage():
         print(f"   Page Title: {page_info.get('title', 'N/A')}")
         print(f"   Current URL: {page_info.get('url', 'N/A')}")
         
-        # Get VNC info
-        print("\n6. Getting VNC connection details...")
-        vnc_info = client.get_vnc_info()
-        print(f"   VNC URL: {vnc_info['vnc_url']}")
-        print(f"   Web VNC: {vnc_info['web_vnc_url']}")
+        # Get service info
+        print("\n6. Getting service information...")
+        service_info = client.get_info()
+        print(f"   WebSocket URL: {service_info['endpoints']['websocket']}")
+        print(f"   Streaming: {service_info['streaming']}")
         
         print("\n" + "=" * 60)
         print("You can now view the rendered page at:")
-        print(f"  {vnc_info['web_vnc_url']}")
+        print(f"  WebSocket Streaming: Connect Socket.IO client")
+        print(f"  Alternative (noVNC): http://localhost:7900")
+        print(f"  Android WebApp: http://localhost:9000")
         print("=" * 60)
         
         # Wait for user to view

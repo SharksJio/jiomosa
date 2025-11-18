@@ -1,6 +1,6 @@
 """
 Jiomosa Renderer Service
-A service that coordinates Selenium browser sessions with Guacamole for remote rendering
+A service that coordinates Selenium browser sessions with WebSocket streaming for remote rendering
 """
 import os
 import logging

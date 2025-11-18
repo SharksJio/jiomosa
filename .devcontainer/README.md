@@ -35,11 +35,10 @@ This directory contains the GitHub Codespaces / VS Code DevContainer configurati
 
 ### Port Forwarding
 Automatically forwards these ports:
-- **5000**: Renderer API
-- **8080**: Guacamole Web Interface
+- **5000**: Renderer API (WebSocket + REST)
+- **9000**: Android WebApp (Mobile UI)
 - **4444**: Selenium Grid
-- **5900**: VNC Server
-- **7900**: noVNC Web Interface (for viewing browsers)
+- **7900**: noVNC Web Interface (optional, for direct browser viewing)
 
 ## Resource Requirements
 
