@@ -91,8 +91,8 @@ jobs:
           docker compose logs renderer
           echo "=== Chrome logs ==="
           docker compose logs chrome
-          echo "=== Guacamole logs ==="
-          docker compose logs guacamole
+          echo "=== Android WebApp logs ==="
+          docker compose logs android-webapp
       
       - name: Stop services
         if: always()
@@ -131,7 +131,7 @@ jobs:
         run: |
           echo "✓ Deployment validation complete"
           echo "Services configured:"
-          echo "  - Renderer API: http://localhost:5000"
-          echo "  - Guacamole Web: http://localhost:8080/guacamole"
+          echo "  - Renderer API (WebSocket): http://localhost:5000"
+          echo "  - Android WebApp: http://localhost:9000"
           echo "  - Selenium Grid: http://localhost:4444"
-          echo "  - VNC Web Interface: http://localhost:7900"
+          echo "  - noVNC (optional): http://localhost:7900"

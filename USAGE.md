@@ -37,9 +37,10 @@ curl -X POST http://localhost:5000/api/session/demo/load \
   -d '{"url": "https://example.com"}'
 
 # 3. View the rendered page
-# Option A: Web browser (noVNC) - http://localhost:7900
-# Option B: VNC client - vnc://localhost:5900  
-# Option C: Guacamole web interface - http://localhost:8080/guacamole/
+# Option A: Android WebApp (recommended, WebSocket streaming)
+#   Open http://localhost:9000 in browser
+# Option B: noVNC (optional, for direct browser viewing/debugging)
+#   Open http://localhost:7900 in browser (password: secret)
 
 # 4. Close when done
 curl -X POST http://localhost:5000/api/session/demo/close

@@ -11,7 +11,7 @@ A mobile-friendly web application designed to be loaded in an Android WebView. I
 - **Mobile-Optimized**: Fully responsive design optimized for mobile devices
 - **Cloud Rendering**: All websites are rendered on powerful cloud infrastructure
 - **Session Management**: Automatic session creation and management
-- **Interactive Viewer**: Full mouse/keyboard interaction through noVNC
+- **WebSocket Streaming**: Real-time frame streaming at 30 FPS with interactive input support
 
 ## Architecture
 
@@ -25,23 +25,27 @@ A mobile-friendly web application designed to be loaded in an Android WebView. I
 │  │                                   │ │
 │  │  - App Launcher UI                │ │
 │  │  - Website Icons Grid             │ │
+│  │  - WebSocket Client (Socket.IO)  │ │
 │  │  - Session Management             │ │
 │  └───────────────┬───────────────────┘ │
 └──────────────────┼─────────────────────┘
-                   │ HTTP/REST API
+                   │ WebSocket + REST API
                    ▼
 ┌─────────────────────────────────────────┐
 │        Jiomosa Renderer Service         │
+│        (Flask + Socket.IO)              │
 │                                         │
+│  - WebSocket Server (30 FPS streaming) │
 │  - Session Creation                     │
 │  - URL Loading                          │
 │  - Browser Control                      │
+│  - Adaptive Quality                     │
 └────────────────┬────────────────────────┘
-                 │
+                 │ Selenium WebDriver
                  ▼
 ┌─────────────────────────────────────────┐
-│   Selenium + Chrome + VNC + Guacamole   │
-│   (Website Rendering)                   │
+│      Selenium + Chrome Browser          │
+│      (Website Rendering)                │
 └─────────────────────────────────────────┘
 ```
 
@@ -308,8 +312,9 @@ gunicorn -w 4 -b 0.0.0.0:9000 webapp:app
 
 ### Websites not loading
 - Check Selenium/Chrome service: `docker compose logs chrome`
-- Verify VNC is accessible: Navigate to http://localhost:7900
+- Optionally verify noVNC is accessible: Navigate to http://localhost:7900
 - Check renderer logs: `docker compose logs renderer`
+- Test WebSocket connection using browser DevTools
 
 ### Android WebView Issues
 - Ensure JavaScript is enabled in WebView settings
@@ -337,7 +342,7 @@ This is a proof-of-concept. For production:
 4. Use HTTPS everywhere
 5. Implement CORS properly
 6. Add CSP headers
-7. Secure WebSocket connections (if using)
+7. Secure WebSocket connections with WSS
 8. Regular security audits
 
 ## Contributing

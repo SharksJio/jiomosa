@@ -30,10 +30,10 @@ curl http://localhost:5000/health
 ```
 
 **Access Points**:
-- Renderer API: http://localhost:5000
-- VNC Web Viewer: http://localhost:7900 (password: secret)
-- Guacamole: http://localhost:8080/guacamole/
+- Renderer API (WebSocket + REST): http://localhost:5000
+- Android WebApp: http://localhost:9000
 - Selenium Grid: http://localhost:4444
+- noVNC (optional, for direct browser viewing): http://localhost:7900 (password: secret)
 
 **Test a website**:
 ```bash
@@ -47,7 +47,11 @@ curl -X POST http://localhost:5000/api/session/test1/load \
   -H "Content-Type: application/json" \
   -d '{"url": "https://www.google.com"}'
 
-# View at: http://localhost:7900
+# Option A: Use Android WebApp (recommended)
+# Open http://localhost:9000 in browser
+
+# Option B: View via noVNC (optional, for debugging)
+# Open http://localhost:7900 in browser
 ```
 
 ### 2. Cloud VM Deployment (Recommended for Remote Testing)
@@ -84,8 +88,8 @@ docker compose up -d
 
 # 5. Configure firewall
 sudo ufw allow 5000
+sudo ufw allow 9000
 sudo ufw allow 7900
-sudo ufw allow 8080
 ```
 
 **Access from anywhere**:
