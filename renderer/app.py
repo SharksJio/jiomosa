@@ -48,10 +48,6 @@ ws_handler = None
 # Environment configuration
 SELENIUM_HOST = os.getenv('SELENIUM_HOST', 'chrome')
 SELENIUM_PORT = os.getenv('SELENIUM_PORT', '4444')
-GUACD_HOST = os.getenv('GUACD_HOST', 'guacd')
-GUACD_PORT = os.getenv('GUACD_PORT', '4822')
-VNC_HOST = os.getenv('VNC_HOST', 'chrome')
-VNC_PORT = os.getenv('VNC_PORT', '5900')
 SESSION_TIMEOUT = int(os.getenv('SESSION_TIMEOUT', '300'))  # 5 minutes default
 FRAME_CAPTURE_INTERVAL = float(os.getenv('FRAME_CAPTURE_INTERVAL', '1.0'))  # 1 second default
 
@@ -309,8 +305,8 @@ def health():
         'status': 'healthy',
         'service': 'jiomosa-renderer',
         'selenium': f'{SELENIUM_HOST}:{SELENIUM_PORT}',
-        'guacd': f'{GUACD_HOST}:{GUACD_PORT}',
-        'active_sessions': len(active_sessions)
+        'active_sessions': len(active_sessions),
+        'websocket': 'enabled'
     }), 200
 
 
@@ -319,8 +315,9 @@ def info():
     """Get service information"""
     return jsonify({
         'service': 'Jiomosa Renderer',
-        'version': '1.0.0',
-        'description': 'Cloud-based website rendering service for low-end devices',
+        'version': '2.0.0',
+        'description': 'Cloud-based website rendering service with WebSocket streaming for low-end devices',
+        'streaming': 'WebSocket (Socket.IO)',
         'endpoints': {
             'health': '/health',
             'info': '/api/info',
@@ -333,12 +330,12 @@ def info():
             'session_frame': '/api/session/<session_id>/frame',
             'session_frame_data': '/api/session/<session_id>/frame/data',
             'session_viewer': '/api/session/<session_id>/viewer',
-            'vnc_info': '/api/vnc/info'
+            'websocket': 'ws://<host>:5000/socket.io/'
         },
-        'vnc_connection': {
-            'host': VNC_HOST,
-            'port': VNC_PORT,
-            'web_interface': f'http://chrome:7900'
+        'alternative_access': {
+            'description': 'Chrome noVNC web interface for direct browser access (optional)',
+            'url': 'http://localhost:7900',
+            'password': 'secret'
         },
         'session_config': {
             'timeout': SESSION_TIMEOUT,
@@ -372,8 +369,12 @@ def create_session():
             'success': True,
             'session_id': session_id,
             'created_at': session.created_at,
-            'vnc_url': f'vnc://{VNC_HOST}:{VNC_PORT}',
-            'web_vnc_url': f'http://localhost:7900/?autoconnect=1&resize=scale&password=secret'
+            'websocket_url': f'ws://localhost:5000/socket.io/',
+            'alternative_access': {
+                'description': 'Chrome noVNC for direct browser viewing',
+                'url': 'http://localhost:7900',
+                'password': 'secret'
+            }
         }), 201
         
     except Exception as e:
@@ -409,9 +410,7 @@ def load_url(session_id):
             return jsonify({
                 'success': True,
                 'message': message,
-                'page_info': page_info,
-                'vnc_url': f'vnc://{VNC_HOST}:{VNC_PORT}',
-                'web_vnc_url': f'http://localhost:7900/?autoconnect=1&resize=scale&password=secret'
+                'page_info': page_info
             }), 200
         else:
             return jsonify({
@@ -441,9 +440,7 @@ def session_info(session_id):
             'session_id': session_id,
             'created_at': session.created_at,
             'last_activity': session.last_activity,
-            'page_info': page_info,
-            'vnc_url': f'vnc://{VNC_HOST}:{VNC_PORT}',
-            'web_vnc_url': f'http://localhost:7900/?autoconnect=1&resize=scale&password=secret'
+            'page_info': page_info
         }), 200
         
     except Exception as e:
@@ -879,19 +876,6 @@ def viewer(session_id):
     return render_template_string(html_template, session_id=session_id)
 
 
-@app.route('/api/vnc/info', methods=['GET'])
-def vnc_info():
-    """Get VNC connection information"""
-    return jsonify({
-        'vnc_host': VNC_HOST,
-        'vnc_port': VNC_PORT,
-        'vnc_url': f'vnc://{VNC_HOST}:{VNC_PORT}',
-        'web_vnc_url': f'http://localhost:7900/?autoconnect=1&resize=scale&password=secret',
-        'guacamole_url': f'http://localhost:8080/guacamole/',
-        'info': 'Use VNC client or web interface to view the rendered browser'
-    }), 200
-
-
 # ============================================================================
 # WebSocket Event Handlers for Real-time Framebuffer Streaming
 # ============================================================================
@@ -1103,12 +1087,11 @@ def handle_adaptive_toggle(data):
 
 
 if __name__ == '__main__':
-    logger.info("Starting Jiomosa Renderer Service")
+    logger.info("Starting Jiomosa Renderer Service with WebSocket Streaming")
     logger.info(f"Selenium: {SELENIUM_HOST}:{SELENIUM_PORT}")
-    logger.info(f"Guacamole: {GUACD_HOST}:{GUACD_PORT}")
-    logger.info(f"VNC: {VNC_HOST}:{VNC_PORT}")
     logger.info(f"Session Timeout: {SESSION_TIMEOUT} seconds")
     logger.info(f"Frame Capture Interval: {FRAME_CAPTURE_INTERVAL} seconds")
+    logger.info("WebSocket: Socket.IO enabled on ws://0.0.0.0:5000/socket.io/")
     
     # Initialize WebSocket handler
     ws_handler = WebSocketHandler(socketio, active_sessions)
