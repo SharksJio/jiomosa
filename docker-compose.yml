@@ -1,49 +1,5 @@
 services:
-  # Guacamole daemon - handles remote desktop protocols
-  guacd:
-    image: guacamole/guacd:latest
-    container_name: jiomosa-guacd
-    restart: unless-stopped
-    networks:
-      - jiomosa-network
-    ports:
-      - "4822:4822"
-
-  # PostgreSQL database for Guacamole
-  postgres:
-    image: postgres:15
-    container_name: jiomosa-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: guacamole_db
-      POSTGRES_USER: guacamole_user
-      POSTGRES_PASSWORD: guacamole_pass
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./scripts/guacamole-init:/docker-entrypoint-initdb.d
-    networks:
-      - jiomosa-network
-
-  # Guacamole web application
-  guacamole:
-    image: guacamole/guacamole:latest
-    container_name: jiomosa-guacamole
-    restart: unless-stopped
-    environment:
-      GUACD_HOSTNAME: guacd
-      POSTGRESQL_HOSTNAME: postgres
-      POSTGRESQL_DATABASE: guacamole_db
-      POSTGRESQL_USERNAME: guacamole_user
-      POSTGRESQL_PASSWORD: guacamole_pass
-    ports:
-      - "8080:8080"
-    depends_on:
-      - guacd
-      - postgres
-    networks:
-      - jiomosa-network
-
-  # Selenium Chrome node with VNC
+  # Selenium Chrome node with VNC (optional - for direct browser access)
   chrome:
     image: selenium/standalone-chrome:latest
     container_name: jiomosa-chrome
@@ -62,7 +18,7 @@ services:
     volumes:
       - /dev/shm:/dev/shm
 
-  # Custom renderer service
+  # Renderer service - WebSocket-based real-time streaming
   renderer:
     build:
       context: ./renderer
@@ -72,15 +28,10 @@ services:
     environment:
       - SELENIUM_HOST=chrome
       - SELENIUM_PORT=4444
-      - GUACD_HOST=guacd
-      - GUACD_PORT=4822
-      - VNC_HOST=chrome
-      - VNC_PORT=5900
     ports:
       - "5000:5000"
     depends_on:
       - chrome
-      - guacd
     networks:
       - jiomosa-network
     volumes:
@@ -109,6 +60,3 @@ services:
 networks:
   jiomosa-network:
     driver: bridge
-
-volumes:
-  postgres-data:
