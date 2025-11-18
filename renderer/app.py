@@ -8,6 +8,7 @@ import time
 import base64
 import threading
 from flask import Flask, jsonify, request, send_file, render_template_string
+from flask_cors import CORS
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -24,6 +25,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+# Enable CORS with support for all origins, methods, and headers
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "expose_headers": ["Content-Type"],
+        "supports_credentials": False,
+        "max_age": 3600
+    }
+})
 
 # Environment configuration
 SELENIUM_HOST = os.getenv('SELENIUM_HOST', 'chrome')

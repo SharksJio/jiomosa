@@ -453,7 +453,9 @@ SIMULATOR_TEMPLATE = """
     </div>
     
     <script>
-        const JIOMOSA_SERVER = "{{ jiomosa_server }}";
+        // Use the simulator's proxy endpoint to avoid CORS issues in Codespaces
+        const JIOMOSA_SERVER = "/proxy"; // Proxy through the simulator backend
+        
         let currentSessionId = null;
         let keepaliveInterval = null;
         
@@ -505,7 +507,8 @@ SIMULATOR_TEMPLATE = """
                 });
                 
                 if (!response.ok) {
-                    throw new Error('Failed to create session');
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
                 }
                 
                 const data = await response.json();
@@ -522,12 +525,16 @@ SIMULATOR_TEMPLATE = """
                 // Start keepalive
                 startKeepalive();
                 
-                alert(`Session created successfully: ${currentSessionId}\nYou can now load a URL.`);
+                console.log(`Session created successfully: ${currentSessionId}`);
+                return true; // Indicate success
                 
             } catch (error) {
                 console.error('Error creating session:', error);
-                alert('Failed to create session: ' + error.message);
+                const errorMsg = error.message || 'Unknown error';
+                alert(`Failed to create session: ${errorMsg}\n\nCheck console (F12) for details.\nServer: ${JIOMOSA_SERVER}`);
                 createBtn.disabled = false;
+                updateStatus('disconnected', 'Session creation failed');
+                return false; // Indicate failure
             }
         }
         
@@ -540,9 +547,15 @@ SIMULATOR_TEMPLATE = """
                 return;
             }
             
+            // Automatically create session if none exists
             if (!currentSessionId) {
-                alert('Please create a session first');
-                return;
+                const success = await createSession();
+                if (!success) {
+                    // Session creation failed, don't continue
+                    return;
+                }
+                // Wait a moment for session to be fully ready
+                await new Promise(resolve => setTimeout(resolve, 500));
             }
             
             try {
@@ -560,14 +573,33 @@ SIMULATOR_TEMPLATE = """
                 );
                 
                 if (!response.ok) {
-                    throw new Error('Failed to load URL');
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
                 }
                 
                 // Wait a moment for the page to start rendering
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 
-                // Load the viewer in the iframe
-                const viewerURL = `${JIOMOSA_SERVER}/api/session/${currentSessionId}/viewer`;
+                // Use noVNC for interactive viewing instead of static frames
+                // The noVNC viewer allows full mouse/keyboard interaction
+                const vncUrl = 'http://localhost:7900/?autoconnect=1&resize=scale&password=secret';
+                
+                // In Codespaces, we need to use the forwarded port URL
+                let viewerURL;
+                if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                    // We're in Codespaces - construct the forwarded URL
+                    const currentUrl = new URL(window.location.href);
+                    if (currentUrl.hostname.includes('github.dev') || currentUrl.hostname.includes('githubpreview.dev')) {
+                        // GitHub Codespaces format: xxx-8000.xxx.github.dev -> xxx-7900.xxx.github.dev
+                        const vncHost = currentUrl.hostname.replace(/-8000\./, '-7900.');
+                        viewerURL = `${currentUrl.protocol}//${vncHost}/?autoconnect=1&resize=scale&password=secret`;
+                    } else {
+                        viewerURL = vncUrl;
+                    }
+                } else {
+                    viewerURL = vncUrl;
+                }
+                
                 document.getElementById('webview-frame').src = viewerURL;
                 
                 showWebView();
@@ -575,18 +607,25 @@ SIMULATOR_TEMPLATE = """
                 
             } catch (error) {
                 console.error('Error loading URL:', error);
-                alert('Failed to load URL: ' + error.message);
+                alert(`Failed to load URL: ${error.message}\n\nCheck console (F12) for details.`);
                 showLoading(false);
             }
         }
         
-        function loadQuickURL(url) {
+        async function loadQuickURL(url) {
             document.getElementById('urlInput').value = url;
-            if (currentSessionId) {
-                loadURL();
-            } else {
-                alert('Please create a session first by clicking "New Session"');
+            
+            // Automatically create session if none exists
+            if (!currentSessionId) {
+                const success = await createSession();
+                if (!success) {
+                    // Session creation failed, don't continue
+                    return;
+                }
             }
+            
+            // Load the URL (with small delay to ensure session is ready)
+            setTimeout(() => loadURL(), 500);
         }
         
         async function closeSession() {
@@ -709,6 +748,38 @@ def simulator():
 def get_profiles():
     """Get available device profiles"""
     return jsonify(DEVICE_PROFILES)
+
+
+@app.route('/proxy/<path:endpoint>', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def proxy_to_jiomosa(endpoint):
+    """Proxy requests to Jiomosa server to avoid CORS issues"""
+    try:
+        url = f"{JIOMOSA_SERVER}/{endpoint}"
+        
+        # Forward the request
+        if request.method == 'POST':
+            response = requests.post(url, json=request.get_json(), timeout=30)
+        elif request.method == 'GET':
+            response = requests.get(url, timeout=30)
+        elif request.method == 'PUT':
+            response = requests.put(url, json=request.get_json(), timeout=30)
+        elif request.method == 'DELETE':
+            response = requests.delete(url, timeout=30)
+        else:
+            return jsonify({'error': 'Method not allowed'}), 405
+        
+        # Return the response
+        return response.content, response.status_code, {'Content-Type': response.headers.get('Content-Type', 'application/json')}
+    
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Proxy error: {e}")
+        return jsonify({'error': str(e), 'jiomosa_server': JIOMOSA_SERVER}), 500
+
+
+@app.route('/api/<path:endpoint>', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def proxy_api_to_jiomosa(endpoint):
+    """Direct proxy for /api/ paths (for viewer iframe)"""
+    return proxy_to_jiomosa(f"api/{endpoint}")
 
 
 @app.route('/health')
