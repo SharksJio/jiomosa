@@ -402,24 +402,17 @@ done
 
 ## Viewing Rendered Websites
 
-### Option 1: Web Browser (noVNC)
+### Option 1: Android WebApp (Recommended)
+- URL: `http://YOUR_SERVER_IP:9000`
+- **Best for**: Production use, mobile-friendly interface
+- **Features**: WebSocket streaming at 30 FPS, app launcher, interactive input
+- **Screenshot**: Mobile-optimized interface with popular website shortcuts
+
+### Option 2: Web Browser (noVNC - Optional)
 - URL: `http://YOUR_SERVER_IP:7900`
 - Password: `secret`
-- **Best for**: Quick viewing, no client installation needed
+- **Best for**: Debugging, direct browser viewing
 - **Screenshot**: Shows browser interface directly in your web browser
-
-### Option 2: VNC Client (Better Quality)
-- Server: `YOUR_SERVER_IP:5900`
-- Password: `secret`
-- **Recommended clients**:
-  - **Windows**: TightVNC, RealVNC
-  - **Mac**: Built-in Screen Sharing (⌘K in Finder)
-  - **Linux**: Remmina, TigerVNC
-- **Best for**: Better quality, lower latency, local viewing
-
-### Option 3: Guacamole Web Interface
-- URL: `http://YOUR_SERVER_IP:8080/guacamole/`
-- **Best for**: Advanced features, session management
 
 ## Testing from Low-End Devices
 
