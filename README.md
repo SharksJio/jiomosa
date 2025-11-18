@@ -1,24 +1,26 @@
 # Jiomosa - Cloud Website Renderer
 
-A proof-of-concept (PoC) solution that combines **Apache Guacamole** and **Selenium** to render rich websites with minimal latency, designed for low-end devices like RTOS systems (e.g., ThreadX) with limited resources (512MB RAM).
+A cloud-based solution that uses **WebSocket streaming** and **Selenium** to render rich websites with minimal latency, designed for low-end devices like RTOS systems (e.g., ThreadX) with limited resources (512MB RAM).
 
 ## 🎯 Overview
 
-Jiomosa enables rendering of complex, resource-intensive websites on powerful cloud infrastructure and streams the visual output to low-end devices. This approach is similar to cloud gaming services but optimized for web browsing.
+Jiomosa enables rendering of complex, resource-intensive websites on powerful cloud infrastructure and streams the visual output to low-end devices in real-time via WebSocket. This approach is similar to cloud gaming services but optimized for web browsing.
 
 ### Key Features
 
+- **WebSocket Streaming**: Real-time bidirectional streaming with Socket.IO at 30 FPS
 - **Cloud-Based Rendering**: Websites run on powerful servers, not on the client device
-- **Low Latency**: Optimized streaming through Guacamole remote desktop protocol
-- **Resource Efficient**: Client devices only need to display the stream, not render web pages
+- **Adaptive Quality**: Automatic bandwidth detection and quality adjustment (10-90 JPEG quality)
+- **Low Latency**: Direct frame streaming optimized for smooth experience
+- **Interactive Input**: Click, scroll, and text input support via WebSocket
+- **Resource Efficient**: Client devices only display frames, minimal CPU/memory usage
 - **Scalable**: Docker-based architecture that can be deployed anywhere
-- **Easy Testing**: Built-in CI/CD pipeline for automated testing
 - **Multiple Sessions**: Support for concurrent browser sessions
 - **Session Keepalive**: Maintain browser sessions with heartbeat signals
-- **HTML5 Framebuffer Viewer**: Stream browser frames through HTML5 interface for WebView embedding
 - **ThreadX Integration**: Perfect for embedded systems with WebView support
-- **Device Simulator**: Test device emulator for demonstrating website rendering in apps
-- **Android WebApp**: Mobile-friendly app launcher interface for browsing websites like native apps
+- **Device Simulator**: Test device emulator for demonstrating integration
+- **Android WebApp**: Mobile-friendly app launcher with popular website shortcuts
+- **Easy Testing**: Built-in CI/CD pipeline for automated testing
 
 ## 🏗️ Architecture
 
@@ -28,93 +30,87 @@ Jiomosa enables rendering of complex, resource-intensive websites on powerful cl
 │                    (Low-end hardware)                        │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │  Guacamole Client / VNC Viewer                       │  │
-│  │  (Displays rendered stream)                          │  │
+│  │  WebSocket Client (Socket.IO)                        │  │
+│  │  - Receives JPEG frames at 30 FPS                    │  │
+│  │  - Sends input events (click, scroll, text)          │  │
+│  │  - Adaptive quality based on bandwidth               │  │
 │  └──────────────────────────────────────────────────────┘  │
 └────────────────────┬────────────────────────────────────────┘
-                     │ Remote Desktop Protocol (RDP/VNC)
+                     │ WebSocket (bidirectional, Socket.IO)
+                     │ 
                      ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      Cloud Infrastructure                    │
 │                                                              │
-│  ┌─────────────────┐  ┌──────────────────┐                 │
-│  │   Guacamole     │  │   Guacamole      │                 │
-│  │   Server        │◄─┤   Web Client     │                 │
-│  │   (guacd)       │  │                  │                 │
-│  └────────┬────────┘  └──────────────────┘                 │
-│           │                                                  │
-│           ▼                                                  │
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │         Selenium Grid + Chrome Browser               │  │
-│  │         (Renders actual websites)                    │  │
-│  │                                                       │  │
-│  │  ┌────────────────────────────────────────────────┐ │  │
-│  │  │  VNC Server (provides display to Guacamole)    │ │  │
-│  │  └────────────────────────────────────────────────┘ │  │
+│  │   Renderer Service (Flask + Socket.IO)               │  │
+│  │   Port: 5000                                         │  │
+│  │   - WebSocket server for real-time streaming        │  │
+│  │   - REST API for session management                 │  │
+│  │   - Adaptive quality control (bandwidth monitor)    │  │
+│  │   - Input event processing                          │  │
+│  │   - Frame capture at 30 FPS                         │  │
+│  └─────────┬────────────────────────────────────────────┘  │
+│            │ Selenium WebDriver Protocol                    │
+│            ▼                                                 │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │   Selenium Grid + Chrome Browser                     │  │
+│  │   Ports: 4444 (Selenium), 7900 (noVNC - optional)   │  │
+│  │   - Renders actual websites with full JS support    │  │
+│  │   - Captures screenshots at 30 FPS                   │  │
+│  │   - Executes input commands (click, scroll, type)   │  │
+│  │   - noVNC for direct browser viewing (alternative)  │  │
 │  └──────────────────────────────────────────────────────┘  │
-│           ▲                                                  │
-│           │                                                  │
-│  ┌────────┴────────┐                                        │
-│  │   Renderer      │                                        │
-│  │   Service       │                                        │
-│  │   (API/Control) │                                        │
-│  └─────────────────┘                                        │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │   Android WebApp (Flask)                             │  │
+│  │   Port: 9000                                         │  │
+│  │   - Mobile app launcher UI with website shortcuts   │  │
+│  │   - WebSocket client integration                    │  │
+│  │   - Perfect for Android WebView embedding           │  │
+│  └──────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Components
 
-1. **Renderer Service** (Python/Flask)
-   - REST API for managing browser sessions
-   - Selenium WebDriver integration
-   - Session management and coordination
+1. **Renderer Service** (Python/Flask + Socket.IO)
+   - WebSocket server for real-time 30 FPS streaming
+   - REST API for session lifecycle management
+   - Selenium WebDriver integration for browser control
+   - Adaptive quality with bandwidth monitoring
+   - JPEG compression with quality range 10-90
+   - Input event processing (click, scroll, text)
+   - Session keepalive and timeout management
 
 2. **Selenium Grid + Chrome**
-   - Runs actual web browsers in containers
-   - Built-in VNC server for remote display
-   - Handles website rendering
+   - Chromium browser in Docker container
+   - Screenshot capture at 30 FPS for streaming
+   - JavaScript execution and modern web standards
+   - noVNC server (port 7900) for optional direct viewing
+   - Multiple concurrent sessions support
 
-3. **Apache Guacamole**
-   - Remote desktop gateway (guacd)
-   - Web-based client interface
-   - Efficient streaming protocol
-
-4. **PostgreSQL**
-   - Database for Guacamole configuration
-   - User session management
-
-5. **Android WebApp** (NEW)
+3. **Android WebApp** (Flask web app)
    - Mobile-friendly app launcher interface
-   - Website shortcuts in grid layout
+   - 16+ popular website shortcuts (Facebook, YouTube, Gmail, etc.)
+   - WebSocket client for real-time streaming
    - Designed for Android WebView integration
-   - Session management and proxy layer
+   - Custom URL support
+
+4. **Device Simulator** (Standalone test tool)
+   - Emulates ThreadX, IoT, and other low-end devices
+   - Shows website content without browser UI
+   - Multiple device profiles (512MB-2GB RAM)
+   - Perfect for testing and demos
 
 ## 🚀 Quick Start
 
-### Option 1: GitHub Codespaces (Fastest - No Setup Required!)
-
-Perfect for testing without any local installation:
-
-1. Click the green **Code** button at the top of this repository
-2. Select **Codespaces** tab
-3. Click **Create codespace on main**
-4. Wait 3-5 minutes for automatic setup
-5. In the terminal, run:
-```bash
-docker compose up -d
-```
-6. Access port 7900 in the **PORTS** tab to view rendered websites
-
-📖 **Detailed guide**: See [CODESPACES.md](CODESPACES.md) for complete instructions and external website testing
-
-### Option 2: Local Installation
-
-**Prerequisites:**
+### Prerequisites
 - Docker and Docker Compose
-- 4GB+ RAM recommended for running all services
-- Ports 5000, 8080, 4444, 5900, 7900 available
+- 4GB+ RAM recommended
+- Ports 5000, 4444, 7900, 9000 available
 
-**Installation:**
+### Installation
 
 1. Clone the repository:
 ```bash
@@ -127,19 +123,43 @@ cd jiomosa
 docker compose up -d
 ```
 
-3. Wait for services to initialize (30-60 seconds):
+3. Wait 30-60 seconds for services to initialize:
 ```bash
-# Check service health
-curl http://localhost:5000/health
+docker compose ps
 ```
 
-### Using the Renderer API
+### Using the Android WebApp (Recommended)
+
+The easiest way to get started:
+
+```bash
+# Open in browser
+http://localhost:9000
+
+# Features:
+# - Tap any app icon to launch that website
+# - WebSocket streaming at 30 FPS
+# - Adaptive quality based on bandwidth
+# - Interactive touch support
+```
+
+### Using the REST API + WebSocket
 
 #### 1. Create a browser session:
 ```bash
 curl -X POST http://localhost:5000/api/session/create \
   -H "Content-Type: application/json" \
   -d '{"session_id": "my_session"}'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "session_id": "my_session",
+  "created_at": 1763462068.71,
+  "websocket_url": "ws://localhost:5000/socket.io/"
+}
 ```
 
 #### 2. Load a website:
@@ -149,406 +169,344 @@ curl -X POST http://localhost:5000/api/session/my_session/load \
   -d '{"url": "https://example.com"}'
 ```
 
-#### 3. View the rendered page:
-- **Android WebApp**: http://localhost:9000 (Mobile-friendly app launcher)
-- **VNC Web Interface**: http://localhost:7900 (password: secret)
-- **Guacamole**: http://localhost:8080/guacamole/
+#### 3. Connect WebSocket client to receive frames:
 
-#### 4. Get session information:
-```bash
-curl http://localhost:5000/api/session/my_session/info
+```javascript
+// Using Socket.IO client
+const socket = io('http://localhost:5000');
+
+// Subscribe to session
+socket.emit('subscribe', { session_id: 'my_session' });
+
+// Receive frames at 30 FPS
+socket.on('frame', (data) => {
+    // data.image: base64-encoded JPEG
+    // data.timestamp: frame timestamp
+    // data.size: frame size in bytes
+    document.getElementById('browser-view').src = 
+        `data:image/jpeg;base64,${data.image}`;
+});
+
+// Send click input
+socket.emit('input:click', { x: 100, y: 200 });
+
+// Send scroll input
+socket.emit('input:scroll', { deltaX: 0, deltaY: 50 });
+
+// Send text input
+socket.emit('input:text', { text: 'hello world' });
+
+// Set quality (10-100, disables adaptive mode)
+socket.emit('quality:set', { quality: 75 });
+
+// Set FPS (1-60, disables adaptive mode)
+socket.emit('fps:set', { fps: 30 });
+
+// Toggle adaptive mode back on
+socket.emit('adaptive:toggle', { enabled: true });
 ```
 
-#### 5. Close the session:
+#### 4. Close the session:
 ```bash
 curl -X POST http://localhost:5000/api/session/my_session/close
 ```
 
-### Using the HTML5 Framebuffer Viewer (ThreadX Integration)
+### Alternative: Direct Browser Viewing via noVNC
 
-For embedded systems and ThreadX apps with WebView support:
-
-```bash
-# 1. Create session and load URL (same as above)
-curl -X POST http://localhost:5000/api/session/create \
-  -H "Content-Type: application/json" \
-  -d '{"session_id": "threadx_session"}'
-
-curl -X POST http://localhost:5000/api/session/threadx_session/load \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://example.com"}'
-
-# 2. Access the HTML5 viewer in your WebView
-# URL: http://localhost:5000/api/session/threadx_session/viewer
-# This displays a framebuffer stream that auto-refreshes
-
-# 3. Send keepalive to maintain the session
-curl -X POST http://localhost:5000/api/session/threadx_session/keepalive
+For debugging or direct viewing:
 ```
-
-📖 **Detailed guide**: See [KEEPALIVE_FRAMEBUFFER.md](KEEPALIVE_FRAMEBUFFER.md) for ThreadX integration examples
-
-## 🖥️ Device Simulator (Test App)
-
-The Device Simulator is a standalone test application that emulates low-end devices to demonstrate how websites can be rendered inside an app **without showing any browser UI**. Perfect for testing and demonstrating ThreadX, IoT, and embedded system integrations.
-
-### Key Features
-- **Multiple Device Profiles**: Simulate ThreadX RTOS (512MB), IoT devices (256MB), thin clients, and legacy systems
-- **WebView-Only Display**: Shows only website content, no browser chrome or UI
-- **Interactive Testing**: Easy controls to load URLs and test different scenarios
-- **Real-time Streaming**: Uses HTML5 framebuffer streaming
-- **Session Management**: Built-in session creation and management
-
-### Quick Start with Device Simulator
-
-```bash
-# 1. Ensure Jiomosa is running
-docker compose up -d
-
-# 2. Start the device simulator
-cd device_simulator
-./run_simulator.sh
-
-# 3. Open your browser to:
-http://localhost:8000
-
-# 4. In the simulator UI:
-#    - Click "New Session"
-#    - Enter a URL (or use quick actions)
-#    - Click "Load Website"
-#    - Watch the website render in the device screen!
+http://localhost:7900
+Password: secret
 ```
-
-### Available Device Profiles
-
-| Profile | Screen Size | RAM | Use Case |
-|---------|-------------|-----|----------|
-| ThreadX RTOS | 1024x600 | 512MB | Embedded devices, industrial controllers |
-| IoT Device | 800x480 | 256MB | Smart home, constrained IoT |
-| Thin Client | 1280x720 | 1GB | Kiosks, workstations |
-| Legacy System | 1366x768 | 2GB | Older computers |
-
-### Why Use the Device Simulator?
-
-1. **No Browser UI**: Unlike VNC, shows only the website content
-2. **Easy Testing**: Visual way to test how websites look on different devices
-3. **Integration Demo**: Perfect for demonstrating embedded system integrations
-4. **Development**: Test your app integration before deploying to real hardware
-5. **Presentation**: Show stakeholders how the solution works
-
-📖 **Detailed guide**: See [device_simulator/README.md](device_simulator/README.md) for complete documentation
-
-## 📱 Android WebApp (Mobile App Interface)
-
-The Android WebApp provides a mobile-friendly "app launcher" interface, similar to Android's app drawer, allowing users to browse websites as if they were native apps. Perfect for integrating into Android applications via WebView.
-
-### Key Features
-
-- **App Launcher UI**: Grid layout with popular website shortcuts
-- **16+ Pre-configured Apps**: Facebook, Twitter, YouTube, Instagram, WhatsApp, LinkedIn, Reddit, GitHub, Wikipedia, Google, Gmail, Amazon, Netflix, Spotify, BBC News, Google Maps
-- **Custom URL Support**: Users can enter any website URL
-- **Search Functionality**: Filter apps or search for websites
-- **Mobile-Optimized**: Touch-friendly interface designed for mobile devices
-- **Session Management**: Automatic session creation and management
-- **Full-Screen Viewer**: Browse websites in full-screen mode
-- **Android WebView Ready**: Can be directly loaded in Android apps
-
-### Quick Start with Android WebApp
-
-```bash
-# 1. Ensure Jiomosa is running
-docker compose up -d
-
-# 2. Access the Android WebApp
-# Open http://localhost:9000 in your browser
-
-# 3. In the webapp:
-#    - Tap any app icon to launch that website
-#    - Use search to find apps or enter URLs
-#    - Tap "+" to add custom URLs
-#    - Browse websites in full-screen viewer
-```
-
-### Android Integration
-
-To integrate into your Android app, load the webapp in a WebView:
-
-```java
-WebView webView = findViewById(R.id.webView);
-WebSettings webSettings = webView.getSettings();
-webSettings.setJavaScriptEnabled(true);
-webSettings.setDomStorageEnabled(true);
-
-// Load the Jiomosa Android WebApp
-webView.loadUrl("http://YOUR_SERVER:9000/");
-```
-
-### Available Website Shortcuts
-
-| Category | Apps |
-|----------|------|
-| **Social** | Facebook, Twitter/X, Instagram, WhatsApp, LinkedIn, Reddit |
-| **Media** | YouTube, Netflix, Spotify |
-| **Productivity** | Gmail, Google Maps |
-| **Search** | Google |
-| **Development** | GitHub |
-| **Reference** | Wikipedia |
-| **News** | BBC News |
-| **Shopping** | Amazon |
-
-### Customization
-
-You can easily add more website shortcuts by editing `android_webapp/webapp.py`:
-
-```python
-WEBSITE_APPS = [
-    {
-        'id': 'custom',
-        'name': 'Custom Site',
-        'url': 'https://yoursite.com',
-        'icon': '🌐',
-        'color': '#FF5733',
-        'category': 'custom'
-    },
-    # ... more apps
-]
-```
-
-📖 **Detailed guide**: See [android_webapp/README.md](android_webapp/README.md) for complete documentation, API details, and Android integration examples
 
 ## 📡 API Endpoints
 
-### Service Information
-- `GET /health` - Health check
-- `GET /api/info` - Service information and available endpoints
-- `GET /api/vnc/info` - VNC connection details
+### REST API (Session Management)
 
-### Session Management
+#### Service Information
+- `GET /health` - Health check
+- `GET /api/info` - Service information and endpoints
+
+#### Session Management
 - `POST /api/session/create` - Create a new browser session
-- `POST /api/session/{id}/load` - Load a URL in a session
-- `GET /api/session/{id}/info` - Get session information
-- `POST /api/session/{id}/keepalive` - Send keepalive signal to maintain session
-- `POST /api/session/{id}/close` - Close a session
+- `POST /api/session/{id}/load` - Load a URL
+- `GET /api/session/{id}/info` - Get session info
+- `POST /api/session/{id}/keepalive` - Send keepalive heartbeat
+- `POST /api/session/{id}/close` - Close session
 - `GET /api/sessions` - List all active sessions
 
-### Framebuffer & Viewer (New)
-- `GET /api/session/{id}/frame` - Get current browser frame as PNG image
-- `GET /api/session/{id}/frame/data` - Get current browser frame as base64 JSON
-- `GET /api/session/{id}/viewer` - HTML5 viewer page for framebuffer streaming
+#### Legacy Polling Endpoints (for compatibility)
+- `GET /api/session/{id}/frame` - Get current frame as PNG (polling)
+- `GET /api/session/{id}/frame/data` - Get frame as base64 JSON
+- `GET /api/session/{id}/viewer` - HTML5 viewer with auto-refresh
+
+### WebSocket API (Real-time Streaming)
+
+**Connection**: `ws://localhost:5000/socket.io/`
+
+#### Client → Server Events
+- `subscribe` - Subscribe to session frames
+  - Data: `{session_id: "session_id"}`
+- `unsubscribe` - Unsubscribe from session
+- `input:click` - Send click event
+  - Data: `{x: number, y: number}`
+- `input:scroll` - Send scroll event
+  - Data: `{deltaX: number, deltaY: number}`
+- `input:text` - Send text input
+  - Data: `{text: string}`
+- `quality:set` - Set JPEG quality (10-100)
+  - Data: `{quality: number}`
+- `fps:set` - Set target FPS (1-60)
+  - Data: `{fps: number}`
+- `adaptive:toggle` - Toggle adaptive mode
+  - Data: `{enabled: boolean}`
+
+#### Server → Client Events
+- `frame` - Frame data (30 FPS)
+  - Data: `{image: base64_jpeg, timestamp: number, size: number}`
+- `subscribed` - Subscription confirmed
+- `unsubscribed` - Unsubscription confirmed
+- `input:acknowledged` - Input event processed
+- `quality:updated` - Quality changed
+- `fps:updated` - FPS changed
+- `adaptive:updated` - Adaptive mode toggled
+- `error` - Error message
+- `status` - Status update
+
+## 🖥️ Device Simulator
+
+Test the renderer with a device simulator:
+
+```bash
+# Start Jiomosa services
+docker compose up -d
+
+# Start device simulator (separate terminal)
+cd device_simulator
+./run_simulator.sh
+
+# Open simulator
+http://localhost:8000
+
+# Try different device profiles:
+# - ThreadX RTOS (512MB RAM, 1024x600)
+# - IoT Device (256MB RAM, 800x480)
+# - Thin Client (1GB RAM, 1280x720)
+# - Legacy System (2GB RAM, 1366x768)
+```
 
 ## 🧪 Testing
 
-### Run all tests:
+### Run Tests
+
 ```bash
-# Start services
+# Start services first
 docker compose up -d
+sleep 30
 
 # Run integration tests
 python tests/test_renderer.py
+python tests/test_websocket_connection.py
+python tests/test_integration_phase2_3.py
+python tests/test_android_webapp.py
 
-# Run basic website rendering tests
+# Test with real websites
 bash tests/test_websites.sh
-
-# Run comprehensive external website tests (20+ websites)
 bash tests/test_external_websites.sh
-
-# Test device simulator (requires simulator to be running)
-cd device_simulator && ./run_simulator.sh &
-sleep 10
-python ../tests/test_device_simulator.py
 
 # Stop services
 docker compose down
 ```
 
-### Testing External Websites
-
-Test Jiomosa with real-world websites:
+### Manual Testing
 
 ```bash
-# Quick test with a single website
+# Test health
+curl http://localhost:5000/health
+
+# Create session and load website
 curl -X POST http://localhost:5000/api/session/create \
   -H "Content-Type: application/json" \
   -d '{"session_id": "test1"}'
 
 curl -X POST http://localhost:5000/api/session/test1/load \
   -H "Content-Type: application/json" \
-  -d '{"url": "https://www.wikipedia.org"}'
+  -d '{"url": "https://www.example.com"}'
 
-# View at: http://localhost:7900
-```
-
-The comprehensive test suite (`tests/test_external_websites.sh`) tests various website categories:
-- Simple/Static sites
-- Search engines
-- News sites
-- Documentation
-- Developer platforms
-- Social media
-- Educational sites
-- Media sites
-- E-commerce
-- Blogs/Content sites
-
-**For GitHub Codespaces users**: See [CODESPACES.md](CODESPACES.md) for detailed testing guide
-
-### Manual Testing:
-```bash
-# Test health
-curl http://localhost:5000/health
-
-# Create session and load Google
-curl -X POST http://localhost:5000/api/session/create \
-  -H "Content-Type: application/json" \
-  -d '{"session_id": "test1"}' && \
-curl -X POST http://localhost:5000/api/session/test1/load \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://www.google.com"}'
-
-# View in browser: http://localhost:7900
+# View in Android WebApp
+http://localhost:9000
 ```
 
 ## 🔧 Configuration
 
 ### Environment Variables
 
-You can customize the configuration by modifying `docker-compose.yml` or setting environment variables:
+Configure via `docker-compose.yml`:
 
-**Renderer Service:**
-- `SELENIUM_HOST` - Selenium Grid hostname (default: chrome)
-- `SELENIUM_PORT` - Selenium Grid port (default: 4444)
-- `GUACD_HOST` - Guacamole daemon hostname (default: guacd)
-- `GUACD_PORT` - Guacamole daemon port (default: 4822)
-- `VNC_HOST` - VNC server hostname (default: chrome)
-- `VNC_PORT` - VNC server port (default: 5900)
-- `SESSION_TIMEOUT` - Session timeout in seconds (default: 300)
-- `FRAME_CAPTURE_INTERVAL` - Frame capture interval in seconds (default: 1.0)
-
-**Guacamole:**
-- `POSTGRES_DATABASE` - Database name
-- `POSTGRES_USER` - Database user
-- `POSTGRES_PASSWORD` - Database password
+```yaml
+renderer:
+  environment:
+    - SELENIUM_HOST=chrome
+    - SELENIUM_PORT=4444
+    - SESSION_TIMEOUT=300          # Session timeout (seconds)
+    - FRAME_CAPTURE_INTERVAL=1.0   # Not used (WebSocket streams at configured FPS)
+    - FLASK_DEBUG=false            # Enable debug mode (not recommended)
+```
 
 ### Scaling
 
-To handle more concurrent sessions, scale the Chrome service:
+Scale Chrome instances for more concurrent sessions:
+
 ```bash
 docker compose up -d --scale chrome=3
 ```
 
-## 🔒 Security Considerations
-
-This is a **Proof of Concept** and should not be deployed in production without additional security measures:
-
-1. **Authentication**: Add proper authentication to the Renderer API
-2. **Network Security**: Use firewall rules and secure networks
-3. **HTTPS/TLS**: Enable encrypted connections
-4. **Resource Limits**: Configure container resource limits
-5. **Session Timeouts**: Implement session timeout mechanisms
-6. **Input Validation**: Enhance URL validation and sanitization
-
 ## 🎯 Use Cases
 
 1. **IoT Devices**: Browse modern websites on resource-constrained devices
-2. **Legacy Systems**: Access modern web applications from old hardware
+2. **Legacy Systems**: Access modern web on old hardware (ThreadX, FreeRTOS)
 3. **Thin Clients**: Deploy in environments with minimal client resources
 4. **Android Apps**: Build mobile apps that browse websites without embedded browsers
-5. **Embedded Systems**: Integrate web browsing into embedded devices (ThreadX, FreeRTOS)
+5. **Embedded Systems**: Integrate web browsing into embedded devices
 6. **Testing**: Automated website testing and screenshot capture
 7. **Remote Access**: Provide web browsing in restricted environments
-8. **Kiosks**: Build touch-screen kiosk applications with web browsing capabilities
+8. **Kiosks**: Build touch-screen kiosk applications
 
 ## 🛠️ Development
 
 ### Project Structure
+
 ```
 jiomosa/
-├── docker-compose.yml       # Multi-service orchestration
-├── renderer/                # Renderer service
-│   ├── Dockerfile
+├── docker-compose.yml            # Service orchestration
+├── renderer/                     # Renderer service (WebSocket streaming)
+│   ├── app.py                   # Flask app with Socket.IO
+│   ├── websocket_handler.py     # WebSocket streaming logic
 │   ├── requirements.txt
-│   └── app.py              # Flask API application
-├── android_webapp/          # Android WebApp - Mobile app launcher
-│   ├── Dockerfile
+│   └── Dockerfile
+├── android_webapp/               # Android WebApp
+│   ├── webapp.py                # Flask webapp
+│   ├── static/
+│   │   └── streaming.js         # WebSocket client library
 │   ├── requirements.txt
-│   ├── webapp.py           # Flask webapp application
-│   ├── run_webapp.sh       # Launcher script
-│   └── README.md           # Webapp documentation
-├── device_simulator/        # Device simulator for testing
-│   ├── simulator.py        # Main simulator app
-│   ├── requirements.txt
-│   ├── run_simulator.sh    # Launcher script
-│   └── README.md           # Simulator documentation
-├── scripts/                # Database and setup scripts
-│   └── initdb.sql
-├── tests/                  # Integration tests
+│   └── Dockerfile
+├── device_simulator/             # Device simulator
+│   ├── simulator.py
+│   ├── run_simulator.sh
+│   └── README.md
+├── tests/                        # Integration tests
 │   ├── test_renderer.py
+│   ├── test_websocket_connection.py
+│   ├── test_integration_phase2_3.py
 │   ├── test_android_webapp.py
-│   ├── test_device_simulator.py
-│   └── test_websites.sh
-├── examples/               # Example usage scripts
-│   └── python_client.py
-├── .github/
-│   └── workflows/
-│       └── ci.yml          # CI/CD pipeline
+│   └── test_device_simulator.py
+├── .github/workflows/ci.yml      # CI/CD pipeline
 └── README.md
 ```
 
 ### Building Locally
-```bash
-# Build renderer service
-cd renderer
-docker build -t jiomosa-renderer .
 
-# Run with docker-compose
-cd ..
-docker compose up
+```bash
+# Build renderer
+docker compose build renderer
+
+# Build android webapp
+docker compose build android-webapp
+
+# Start all services
+docker compose up -d
 ```
 
 ### Debugging
+
 ```bash
 # View logs
 docker compose logs -f renderer
 docker compose logs -f chrome
+docker compose logs -f android-webapp
 
 # Access container shell
 docker exec -it jiomosa-renderer bash
-docker exec -it jiomosa-chrome bash
 
 # Check Selenium status
 curl http://localhost:4444/status
 ```
 
+## 📊 Performance
+
+### Streaming Performance
+- **Frame Rate**: 30 FPS (adjustable 1-60 FPS)
+- **Quality**: JPEG 10-90 (adaptive based on bandwidth)
+- **Latency**: ~50-100ms (local network)
+- **Bandwidth**:
+  - High quality (90): ~2-5 Mbps
+  - Medium quality (75): ~1-2 Mbps
+  - Low quality (50): ~0.5-1 Mbps
+
+### Resource Usage
+- **Renderer**: ~100MB RAM, <5% CPU
+- **Chrome**: ~500MB RAM per session, ~30% CPU while rendering
+- **Android WebApp**: ~50MB RAM, <1% CPU
+- **Client**: Minimal (just displays frames)
+
+### Optimization Tips
+1. Enable adaptive quality mode (enabled by default)
+2. Adjust FPS based on use case (30 for smooth, 15 for bandwidth savings)
+3. Use lower resolution for mobile devices
+4. Enable compression in Socket.IO transport
+
+## 🔒 Security Considerations
+
+This is a **PoC/Demo** - add these for production:
+
+1. **Authentication**: Add JWT or OAuth to Renderer API and WebSocket
+2. **HTTPS/WSS**: Use TLS for encrypted connections
+3. **Rate Limiting**: Prevent API and WebSocket abuse
+4. **Firewall Rules**: Restrict port access
+5. **Session Limits**: Limit sessions per user/IP
+6. **Input Validation**: Sanitize all URL and input parameters
+7. **CORS**: Configure proper CORS policies
+8. **Container Security**: Run as non-root, use security profiles
+
 ## 🚀 CI/CD Pipeline
 
-The GitHub Actions workflow automatically:
-1. Builds all Docker images
-2. Starts the services
-3. Runs health checks
-4. Executes integration tests
-5. Tests rendering multiple websites
+GitHub Actions automatically:
+1. Builds Docker images
+2. Starts services
+3. Runs integration tests
+4. Tests WebSocket connectivity
+5. Tests multiple websites
 6. Reports results
 
 Workflow triggers:
 - Push to main/develop branches
 - Pull requests
-- Manual workflow dispatch
+- Manual dispatch
 
-## 📊 Performance Optimization
+## 📚 Documentation
 
-For optimal performance on low-end clients:
+- [Architecture Details](ARCHITECTURE.md) - Detailed architecture documentation
+- [Deployment Guide](DEPLOYMENT.md) - Production deployment instructions
+- [Quick Start](QUICKSTART.md) - Getting started guide
+- [Usage Guide](USAGE.md) - Detailed usage examples
+- [Codespaces](CODESPACES.md) - GitHub Codespaces setup
 
-1. **Reduce Resolution**: Lower the browser window size for smaller frames
-2. **Compression**: Enable Guacamole's compression settings
-3. **Frame Rate**: Adjust frame capture interval (FRAME_CAPTURE_INTERVAL env var)
-4. **Network**: Use local network deployment for minimal latency
-5. **Browser Settings**: Disable unnecessary browser features
-6. **Session Management**: Use keepalive to maintain sessions without recreating
-7. **Framebuffer Streaming**: Use HTML5 viewer for lower overhead than VNC
+## 💡 Future Enhancements
+
+- [x] WebSocket-based frame streaming (completed)
+- [x] Adaptive quality control (completed)
+- [x] Real-time input events (completed)
+- [ ] Multi-user collaboration (shared sessions)
+- [ ] Recording and playback
+- [ ] Performance metrics dashboard
+- [ ] WebRTC support for P2P streaming
+- [ ] Load balancing across browser nodes
+- [ ] Kubernetes deployment manifests
+- [ ] Browser extensions support
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please:
+Contributions welcome! Please:
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
@@ -561,28 +519,11 @@ This project is provided as-is for educational and demonstration purposes.
 
 ## 🔗 References
 
-- [Apache Guacamole](https://guacamole.apache.org/)
+- [Socket.IO](https://socket.io/) - WebSocket library
 - [Selenium WebDriver](https://www.selenium.dev/)
 - [Docker Selenium](https://github.com/SeleniumHQ/docker-selenium)
-- [ThreadX RTOS](https://azure.microsoft.com/en-us/services/rtos/)
-
-## 💡 Future Enhancements
-
-- [ ] WebRTC support for lower latency
-- [ ] WebSocket-based frame streaming
-- [ ] Mobile-optimized streaming
-- [ ] Multi-user collaboration
-- [ ] Recording and playback
-- [ ] Performance metrics dashboard
-- [ ] Load balancing across multiple browser nodes
-- [ ] Kubernetes deployment manifests
-- [ ] Custom browser profiles and extensions
-- [ ] JPEG frame format for smaller sizes
-- [ ] Adaptive frame rate based on content changes
-
-## 📞 Support
-
-For issues and questions, please use the GitHub issue tracker.
+- [ThreadX RTOS](https://azure.microsoft.com/services/rtos/)
+- [Flask-SocketIO](https://flask-socketio.readthedocs.io/)
 
 ---
 
