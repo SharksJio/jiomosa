@@ -18,6 +18,7 @@ Jiomosa enables rendering of complex, resource-intensive websites on powerful cl
 - **HTML5 Framebuffer Viewer**: Stream browser frames through HTML5 interface for WebView embedding
 - **ThreadX Integration**: Perfect for embedded systems with WebView support
 - **Device Simulator**: Test device emulator for demonstrating website rendering in apps
+- **Android WebApp**: Mobile-friendly app launcher interface for browsing websites like native apps
 
 ## 🏗️ Architecture
 
@@ -82,6 +83,12 @@ Jiomosa enables rendering of complex, resource-intensive websites on powerful cl
    - Database for Guacamole configuration
    - User session management
 
+5. **Android WebApp** (NEW)
+   - Mobile-friendly app launcher interface
+   - Website shortcuts in grid layout
+   - Designed for Android WebView integration
+   - Session management and proxy layer
+
 ## 🚀 Quick Start
 
 ### Option 1: GitHub Codespaces (Fastest - No Setup Required!)
@@ -143,6 +150,7 @@ curl -X POST http://localhost:5000/api/session/my_session/load \
 ```
 
 #### 3. View the rendered page:
+- **Android WebApp**: http://localhost:9000 (Mobile-friendly app launcher)
 - **VNC Web Interface**: http://localhost:7900 (password: secret)
 - **Guacamole**: http://localhost:8080/guacamole/
 
@@ -229,6 +237,84 @@ http://localhost:8000
 5. **Presentation**: Show stakeholders how the solution works
 
 📖 **Detailed guide**: See [device_simulator/README.md](device_simulator/README.md) for complete documentation
+
+## 📱 Android WebApp (Mobile App Interface)
+
+The Android WebApp provides a mobile-friendly "app launcher" interface, similar to Android's app drawer, allowing users to browse websites as if they were native apps. Perfect for integrating into Android applications via WebView.
+
+### Key Features
+
+- **App Launcher UI**: Grid layout with popular website shortcuts
+- **16+ Pre-configured Apps**: Facebook, Twitter, YouTube, Instagram, WhatsApp, LinkedIn, Reddit, GitHub, Wikipedia, Google, Gmail, Amazon, Netflix, Spotify, BBC News, Google Maps
+- **Custom URL Support**: Users can enter any website URL
+- **Search Functionality**: Filter apps or search for websites
+- **Mobile-Optimized**: Touch-friendly interface designed for mobile devices
+- **Session Management**: Automatic session creation and management
+- **Full-Screen Viewer**: Browse websites in full-screen mode
+- **Android WebView Ready**: Can be directly loaded in Android apps
+
+### Quick Start with Android WebApp
+
+```bash
+# 1. Ensure Jiomosa is running
+docker compose up -d
+
+# 2. Access the Android WebApp
+# Open http://localhost:9000 in your browser
+
+# 3. In the webapp:
+#    - Tap any app icon to launch that website
+#    - Use search to find apps or enter URLs
+#    - Tap "+" to add custom URLs
+#    - Browse websites in full-screen viewer
+```
+
+### Android Integration
+
+To integrate into your Android app, load the webapp in a WebView:
+
+```java
+WebView webView = findViewById(R.id.webView);
+WebSettings webSettings = webView.getSettings();
+webSettings.setJavaScriptEnabled(true);
+webSettings.setDomStorageEnabled(true);
+
+// Load the Jiomosa Android WebApp
+webView.loadUrl("http://YOUR_SERVER:9000/");
+```
+
+### Available Website Shortcuts
+
+| Category | Apps |
+|----------|------|
+| **Social** | Facebook, Twitter/X, Instagram, WhatsApp, LinkedIn, Reddit |
+| **Media** | YouTube, Netflix, Spotify |
+| **Productivity** | Gmail, Google Maps |
+| **Search** | Google |
+| **Development** | GitHub |
+| **Reference** | Wikipedia |
+| **News** | BBC News |
+| **Shopping** | Amazon |
+
+### Customization
+
+You can easily add more website shortcuts by editing `android_webapp/webapp.py`:
+
+```python
+WEBSITE_APPS = [
+    {
+        'id': 'custom',
+        'name': 'Custom Site',
+        'url': 'https://yoursite.com',
+        'icon': '🌐',
+        'color': '#FF5733',
+        'category': 'custom'
+    },
+    # ... more apps
+]
+```
+
+📖 **Detailed guide**: See [android_webapp/README.md](android_webapp/README.md) for complete documentation, API details, and Android integration examples
 
 ## 📡 API Endpoints
 
@@ -366,8 +452,11 @@ This is a **Proof of Concept** and should not be deployed in production without 
 1. **IoT Devices**: Browse modern websites on resource-constrained devices
 2. **Legacy Systems**: Access modern web applications from old hardware
 3. **Thin Clients**: Deploy in environments with minimal client resources
-4. **Testing**: Automated website testing and screenshot capture
-5. **Remote Access**: Provide web browsing in restricted environments
+4. **Android Apps**: Build mobile apps that browse websites without embedded browsers
+5. **Embedded Systems**: Integrate web browsing into embedded devices (ThreadX, FreeRTOS)
+6. **Testing**: Automated website testing and screenshot capture
+7. **Remote Access**: Provide web browsing in restricted environments
+8. **Kiosks**: Build touch-screen kiosk applications with web browsing capabilities
 
 ## 🛠️ Development
 
@@ -379,6 +468,12 @@ jiomosa/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── app.py              # Flask API application
+├── android_webapp/          # Android WebApp - Mobile app launcher
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── webapp.py           # Flask webapp application
+│   ├── run_webapp.sh       # Launcher script
+│   └── README.md           # Webapp documentation
 ├── device_simulator/        # Device simulator for testing
 │   ├── simulator.py        # Main simulator app
 │   ├── requirements.txt
@@ -388,6 +483,7 @@ jiomosa/
 │   └── initdb.sql
 ├── tests/                  # Integration tests
 │   ├── test_renderer.py
+│   ├── test_android_webapp.py
 │   ├── test_device_simulator.py
 │   └── test_websites.sh
 ├── examples/               # Example usage scripts
