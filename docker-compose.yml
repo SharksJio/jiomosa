@@ -86,6 +86,24 @@ services:
     volumes:
       - ./renderer:/app
 
+  # Android WebApp - Mobile app launcher interface
+  android-webapp:
+    build:
+      context: ./android_webapp
+      dockerfile: Dockerfile
+    container_name: jiomosa-android-webapp
+    restart: unless-stopped
+    environment:
+      - JIOMOSA_SERVER=http://renderer:5000
+    ports:
+      - "9000:9000"
+    depends_on:
+      - renderer
+    networks:
+      - jiomosa-network
+    volumes:
+      - ./android_webapp:/app
+
 networks:
   jiomosa-network:
     driver: bridge
