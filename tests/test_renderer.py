@@ -89,15 +89,15 @@ def test_list_sessions():
     assert 'sessions' in data, "Sessions list missing"
     print(f"✓ Session listing passed (active: {data['active_sessions']})")
 
-def test_vnc_info():
-    """Test VNC info endpoint"""
-    print("Testing VNC info endpoint...")
-    response = requests.get(f"{BASE_URL}/api/vnc/info")
-    assert response.status_code == 200, f"VNC info failed: {response.status_code}"
+def test_websocket_endpoint():
+    """Test WebSocket endpoint availability"""
+    print("Testing WebSocket endpoint...")
+    response = requests.get(f"{BASE_URL}/health")
+    assert response.status_code == 200, f"Health check failed: {response.status_code}"
     data = response.json()
-    assert 'vnc_url' in data, "VNC URL missing"
-    assert 'web_vnc_url' in data, "Web VNC URL missing"
-    print("✓ VNC info endpoint passed")
+    assert 'websocket' in data, "WebSocket status missing"
+    assert data['websocket'] == 'enabled', "WebSocket not enabled"
+    print("✓ WebSocket endpoint available")
 
 def main():
     """Run all tests"""
@@ -108,7 +108,7 @@ def main():
     try:
         test_health()
         test_info()
-        test_vnc_info()
+        test_websocket_endpoint()
         test_list_sessions()
         test_session_lifecycle()
         
