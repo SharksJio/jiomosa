@@ -23,6 +23,28 @@ CORS(app)
 # Configuration
 JIOMOSA_SERVER = os.getenv('JIOMOSA_SERVER', 'http://renderer:5000')
 
+# Load WebSocket streaming client code
+try:
+    with open(os.path.join(os.path.dirname(__file__), 'static', 'streaming.js'), 'r') as f:
+        STREAMING_CLIENT_JS = f.read()
+except Exception as e:
+    logger.warning(f"Could not load streaming.js: {e}")
+    STREAMING_CLIENT_JS = "// Streaming client not available"
+
+# Detect Codespaces environment and construct public URLs
+CODESPACE_NAME = os.getenv('CODESPACE_NAME', '')
+if CODESPACE_NAME:
+    # Running in GitHub Codespaces - use public URLs
+    GITHUB_DOMAIN = os.getenv('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN', 'app.github.dev')
+    VNC_URL = f'https://{CODESPACE_NAME}-7900.{GITHUB_DOMAIN}'
+    PUBLIC_RENDERER_URL = f'https://{CODESPACE_NAME}-5000.{GITHUB_DOMAIN}'
+    logger.info(f"Codespaces detected: VNC at {VNC_URL}")
+else:
+    # Running locally or in Docker
+    VNC_URL = 'http://localhost:7900'
+    PUBLIC_RENDERER_URL = None  # Use JIOMOSA_SERVER
+    logger.info("Local environment detected")
+
 # Popular website shortcuts with icons
 WEBSITE_APPS = [
     {
@@ -734,26 +756,29 @@ LAUNCHER_TEMPLATE = """
 </html>
 """
 
-# Website viewer template
+# Website viewer template - FRAMEBUFFER STREAMING VERSION
 VIEWER_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <title>{{ app_name }} - Jiomosa</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
         }
         
-        body {
+        html, body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #000;
             overflow: hidden;
-            height: 100vh;
+            height: 100%;
+            width: 100%;
+            position: fixed;
         }
         
         .app-bar {
@@ -764,8 +789,12 @@ VIEWER_TEMPLATE = """
             align-items: center;
             gap: 12px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-            position: relative;
-            z-index: 100;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 9999;
+            height: 60px;
         }
         
         .back-button {
@@ -781,6 +810,7 @@ VIEWER_TEMPLATE = """
             align-items: center;
             justify-content: center;
             transition: all 0.2s;
+            flex-shrink: 0;
         }
         
         .back-button:active {
@@ -792,6 +822,9 @@ VIEWER_TEMPLATE = """
             flex: 1;
             font-size: 16px;
             font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         
         .refresh-button {
@@ -807,6 +840,7 @@ VIEWER_TEMPLATE = """
             align-items: center;
             justify-content: center;
             transition: all 0.2s;
+            flex-shrink: 0;
         }
         
         .refresh-button:active {
@@ -815,15 +849,43 @@ VIEWER_TEMPLATE = """
         }
         
         .viewer-container {
-            position: relative;
-            height: calc(100vh - 60px);
+            position: fixed;
+            top: 60px;
+            left: 0;
+            right: 0;
+            bottom: 0;
             background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
         }
         
-        #content-frame {
+        #browser-frame {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            display: none;
+            cursor: pointer;
+            touch-action: none; /* Prevent default touch behaviors */
+        }
+        
+        #browser-frame.loaded {
+            display: block;
+        }
+        
+        /* Touch overlay for capturing interactions */
+        .touch-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
             height: 100%;
-            border: none;
+            z-index: 10;
+            cursor: pointer;
+            touch-action: none;
         }
         
         .loading-indicator {
@@ -833,6 +895,14 @@ VIEWER_TEMPLATE = """
             transform: translate(-50%, -50%);
             color: white;
             text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 30px;
+            border-radius: 15px;
+            z-index: 100;
+        }
+        
+        .loading-indicator.hidden {
+            display: none;
         }
         
         .spinner {
@@ -848,53 +918,351 @@ VIEWER_TEMPLATE = """
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        
+        .fps-counter {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #4ade80;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-family: monospace;
+            z-index: 9998;
+            display: none;
+        }
+        
+        .fps-counter.visible {
+            display: block;
+        }
     </style>
 </head>
 <body>
     <!-- App Bar -->
     <div class="app-bar">
-        <button class="back-button" onclick="goBack()">←</button>
+        <button class="back-button" onclick="goBack()" aria-label="Go back">←</button>
         <div class="app-title">{{ app_name }}</div>
-        <button class="refresh-button" onclick="refresh()">↻</button>
+        <button class="refresh-button" onclick="refresh()" aria-label="Refresh">↻</button>
     </div>
     
-    <!-- Viewer Container -->
+    <!-- Viewer Container - Direct Framebuffer Display -->
     <div class="viewer-container">
         <div class="loading-indicator" id="loadingIndicator">
             <div class="spinner"></div>
             <div>Loading {{ app_name }}...</div>
         </div>
-        <iframe id="content-frame" src="{{ viewer_url }}"></iframe>
+        
+        <!-- Touch overlay for capturing interactions -->
+        <div class="touch-overlay" id="touchOverlay"></div>
+        
+        <!-- Direct browser screenshot display (no VNC, no noVNC controls) -->
+        <img id="browser-frame" alt="{{ app_name }}" />
     </div>
     
+    <!-- FPS Counter (debug) -->
+    <div class="fps-counter" id="fpsCounter">
+        FPS: <span id="fpsValue">0</span> | 
+        Bandwidth: <span id="bandwidthValue">-</span> Mbps |
+        <span id="adaptiveLabel" style="color: #fbbf24">📡 Adaptive</span>
+    </div>
+    
+    <!-- Socket.IO for WebSocket support -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    
+    <!-- WebSocket streaming client -->
     <script>
+        // Import streaming client (will be loaded inline)
+        const STREAMING_CLIENT_CODE = `
+${STREAMING_CLIENT_JS}
+        `;
+        eval(STREAMING_CLIENT_CODE);
+        
         const sessionId = "{{ session_id }}";
-        const JIOMOSA_SERVER = '/proxy';
+        let streamingClient = null;
+        let frameCount = 0;
+        let lastFpsUpdate = Date.now();
+        let consecutiveErrors = 0;
+        const MAX_ERRORS = 5;
         
-        // Hide loading indicator after frame loads
-        document.getElementById('content-frame').addEventListener('load', () => {
-            document.getElementById('loadingIndicator').style.display = 'none';
-        });
+        const browserFrame = document.getElementById('browser-frame');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const fpsCounter = document.getElementById('fpsCounter');
+        const fpsValue = document.getElementById('fpsValue');
+        const bandwidthValue = document.getElementById('bandwidthValue');
+        const adaptiveLabel = document.getElementById('adaptiveLabel');
+        const touchOverlay = document.getElementById('touchOverlay');
         
-        // Keep session alive
-        setInterval(async () => {
-            try {
-                await fetch(`${JIOMOSA_SERVER}/api/session/${sessionId}/keepalive`, {
-                    method: 'POST'
-                });
-            } catch (error) {
-                console.error('Keepalive failed:', error);
+        // Touch/click handling variables
+        let lastTouchTime = 0;
+        let touchStartY = 0;
+        let isScrolling = false;
+        
+        // Initialize streaming client
+        function initStreamingClient() {
+            streamingClient = new FrameStreamingClient({
+                serverUrl: window.location.origin,
+                sessionId: sessionId,
+                
+                onFrame: (frameData) => {
+                    // Update image source
+                    browserFrame.src = frameData.image;
+                    browserFrame.classList.add('loaded');
+                    
+                    // Hide loading indicator on first frame
+                    if (loadingIndicator.classList.contains('hidden') === false) {
+                        loadingIndicator.classList.add('hidden');
+                    }
+                    
+                    // Update stats
+                    const stats = frameData.stats;
+                    updateFPS(stats);
+                    
+                    // Reset error counter on success
+                    consecutiveErrors = 0;
+                },
+                
+                onError: (error) => {
+                    console.error('Streaming error:', error);
+                    consecutiveErrors++;
+                    
+                    if (consecutiveErrors >= MAX_ERRORS) {
+                        console.error('Too many errors, stopping stream');
+                        alert('Connection lost. Please go back and try again.');
+                        goBack();
+                    }
+                },
+                
+                onConnect: () => {
+                    console.log('Streaming client connected');
+                    fpsCounter.classList.add('visible');
+                },
+                
+                onDisconnect: (reason) => {
+                    console.log('Streaming client disconnected:', reason);
+                    fpsCounter.classList.remove('visible');
+                }
+            });
+            
+            setupInputHandlers();
+        }
+        
+        // Update FPS counter
+        function updateFPS(stats) {
+            frameCount++;
+            const now = Date.now();
+            const elapsed = now - lastFpsUpdate;
+            
+            if (elapsed >= 1000) {
+                const fps = Math.round(frameCount / (elapsed / 1000));
+                fpsValue.textContent = fps;
+                bandwidthValue.textContent = stats.bandwidthMbps || '-';
+                
+                // Update adaptive label color
+                if (stats.adaptive) {
+                    adaptiveLabel.textContent = '📡 Adaptive';
+                    adaptiveLabel.style.color = '#4ade80';
+                } else {
+                    adaptiveLabel.textContent = '📌 Manual';
+                    adaptiveLabel.style.color = '#f87171';
+                }
+                
+                frameCount = 0;
+                lastFpsUpdate = now;
             }
-        }, 30000);
+        }
         
+        // Refresh - reload URL in browser
+        async function refresh() {
+            if (!streamingClient) return;
+            
+            loadingIndicator.classList.remove('hidden');
+            
+            try {
+                const response = await fetch(`/proxy/api/session/${sessionId}/info`);
+                const info = await response.json();
+                
+                if (info.page_info && info.page_info.url) {
+                    await fetch(`/proxy/api/session/${sessionId}/load`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({url: info.page_info.url})
+                    });
+                    
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            } catch (error) {
+                console.error('Refresh failed:', error);
+            }
+            
+            loadingIndicator.classList.add('hidden');
+        }
+        
+        // Go back to launcher
         function goBack() {
+            if (streamingClient) {
+                streamingClient.disconnect();
+            }
+            
+            // Close session
+            fetch(`/proxy/api/session/${sessionId}/close`, {
+                method: 'POST'
+            }).catch(e => console.error('Error closing session:', e));
+            
             window.location.href = '/';
         }
         
-        function refresh() {
-            document.getElementById('content-frame').src = document.getElementById('content-frame').src;
-            document.getElementById('loadingIndicator').style.display = 'block';
+        // Setup input handlers
+        function setupInputHandlers() {
+            touchOverlay.addEventListener('click', handleClick);
+            touchOverlay.addEventListener('touchstart', handleTouchStart, { passive: false });
+            touchOverlay.addEventListener('touchmove', handleTouchMove, { passive: false });
+            touchOverlay.addEventListener('touchend', handleTouchEnd, { passive: false });
+            touchOverlay.addEventListener('wheel', handleWheel, { passive: false });
         }
+        
+        // Calculate coordinates relative to image
+        function getImageCoordinates(clientX, clientY) {
+            const rect = browserFrame.getBoundingClientRect();
+            const imgNaturalWidth = browserFrame.naturalWidth;
+            const imgNaturalHeight = browserFrame.naturalHeight;
+            
+            if (!imgNaturalWidth || !imgNaturalHeight) {
+                return null;
+            }
+            
+            const scaleX = imgNaturalWidth / rect.width;
+            const scaleY = imgNaturalHeight / rect.height;
+            
+            const x = Math.round((clientX - rect.left) * scaleX);
+            const y = Math.round((clientY - rect.top) * scaleY);
+            
+            return { x, y };
+        }
+        
+        // Handle click/tap
+        function handleClick(event) {
+            event.preventDefault();
+            
+            const coords = getImageCoordinates(event.clientX, event.clientY);
+            if (!coords || !streamingClient) return;
+            
+            streamingClient.sendClick(coords.x, coords.y);
+            showClickFeedback(event.clientX, event.clientY);
+        }
+        
+        // Handle touch start
+        function handleTouchStart(event) {
+            event.preventDefault();
+            
+            if (event.touches.length === 1) {
+                touchStartY = event.touches[0].clientY;
+                isScrolling = false;
+                lastTouchTime = Date.now();
+            }
+        }
+        
+        // Handle touch move (scrolling)
+        function handleTouchMove(event) {
+            event.preventDefault();
+            
+            if (event.touches.length === 1 && !isScrolling) {
+                const deltaY = touchStartY - event.touches[0].clientY;
+                
+                if (Math.abs(deltaY) > 10) {
+                    isScrolling = true;
+                    if (streamingClient) {
+                        streamingClient.sendScroll(0, deltaY);
+                    }
+                    touchStartY = event.touches[0].clientY;
+                }
+            }
+        }
+        
+        // Handle touch end
+        function handleTouchEnd(event) {
+            event.preventDefault();
+            
+            const touchDuration = Date.now() - lastTouchTime;
+            
+            if (!isScrolling && touchDuration < 300) {
+                const touch = event.changedTouches[0];
+                const coords = getImageCoordinates(touch.clientX, touch.clientY);
+                
+                if (coords && streamingClient) {
+                    streamingClient.sendClick(coords.x, coords.y);
+                    showClickFeedback(touch.clientX, touch.clientY);
+                }
+            }
+            
+            isScrolling = false;
+        }
+        
+        // Handle mouse wheel (desktop testing)
+        function handleWheel(event) {
+            event.preventDefault();
+            if (streamingClient) {
+                streamingClient.sendScroll(event.deltaX, event.deltaY);
+            }
+        }
+        
+        // Visual feedback for clicks
+        function showClickFeedback(x, y) {
+            const ripple = document.createElement('div');
+            ripple.style.position = 'fixed';
+            ripple.style.left = x + 'px';
+            ripple.style.top = y + 'px';
+            ripple.style.width = '40px';
+            ripple.style.height = '40px';
+            ripple.style.borderRadius = '50%';
+            ripple.style.background = 'rgba(255, 255, 255, 0.5)';
+            ripple.style.transform = 'translate(-50%, -50%) scale(0)';
+            ripple.style.animation = 'ripple 0.6s ease-out';
+            ripple.style.pointerEvents = 'none';
+            ripple.style.zIndex = '10000';
+            
+            document.body.appendChild(ripple);
+            
+            setTimeout(() => {
+                document.body.removeChild(ripple);
+            }, 600);
+        }
+        
+        // Add ripple animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes ripple {
+                to {
+                    transform: translate(-50%, -50%) scale(1);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // Auto-start streaming on page load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                initStreamingClient();
+                streamingClient.subscribe(sessionId);
+            }, 500);
+        });
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (streamingClient) {
+                streamingClient.disconnect();
+            }
+        });
+        
+        // Handle visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                console.log('Page hidden');
+            } else {
+                console.log('Page visible');
+            }
+        });
     </script>
 </body>
 </html>
@@ -909,19 +1277,15 @@ def home():
 
 @app.route('/viewer')
 def viewer():
-    """Website viewer page"""
+    """Website viewer page - WebSocket streaming (real-time bidirectional)"""
     session_id = request.args.get('session', '')
     app_name = request.args.get('app', 'Website')
-    
-    # Construct VNC viewer URL
-    # In production, this would be the noVNC web interface
-    viewer_url = f'http://localhost:7900/?autoconnect=1&resize=scale&password=secret'
     
     return render_template_string(
         VIEWER_TEMPLATE,
         session_id=session_id,
         app_name=app_name,
-        viewer_url=viewer_url
+        STREAMING_CLIENT_JS=STREAMING_CLIENT_JS
     )
 
 

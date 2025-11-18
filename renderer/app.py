@@ -9,6 +9,8 @@ import base64
 import threading
 from flask import Flask, jsonify, request, send_file, render_template_string
 from flask_cors import CORS
+from flask_socketio import SocketIO, emit, disconnect
+from websocket_handler import WebSocketHandler
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -36,6 +38,12 @@ CORS(app, resources={
         "max_age": 3600
     }
 })
+
+# Initialize WebSocket support
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+# Initialize WebSocket handler (will be set when app starts)
+ws_handler = None
 
 # Environment configuration
 SELENIUM_HOST = os.getenv('SELENIUM_HOST', 'chrome')
@@ -73,7 +81,31 @@ class BrowserSession:
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_argument('--window-size=1920,1080')
+            
+            # Mobile viewport size (similar to iPhone/Android)
+            chrome_options.add_argument('--window-size=390,844')
+            chrome_options.add_argument('--window-position=0,0')
+            
+            # Kiosk mode: hide browser UI elements for clean web content view
+            chrome_options.add_argument('--kiosk')
+            chrome_options.add_argument('--start-maximized')
+            chrome_options.add_argument('--disable-infobars')
+            chrome_options.add_argument('--disable-extensions')
+            
+            # Mobile user agent to load mobile versions of websites
+            mobile_user_agent = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+            chrome_options.add_argument(f'--user-agent={mobile_user_agent}')
+            
+            # Mobile emulation for proper responsive rendering
+            mobile_emulation = {
+                'deviceMetrics': {'width': 390, 'height': 844, 'pixelRatio': 3.0},
+                'userAgent': mobile_user_agent
+            }
+            chrome_options.add_experimental_option('mobileEmulation', mobile_emulation)
+            
+            # Hide browser chrome (address bar, tabs, etc.)
+            chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
             
             # Connect to remote Selenium Grid
             selenium_url = f'http://{SELENIUM_HOST}:{SELENIUM_PORT}/wd/hub'
@@ -135,6 +167,75 @@ class BrowserSession:
             logger.error(f"Error getting page info: {e}")
             return None
     
+    def send_click(self, x, y):
+        """Send click event at specified coordinates"""
+        try:
+            if not self.driver:
+                return False, "Driver not initialized"
+            
+            # Execute JavaScript to simulate click at coordinates
+            script = f"""
+                var element = document.elementFromPoint({x}, {y});
+                if (element) {{
+                    var event = new MouseEvent('click', {{
+                        view: window,
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: {x},
+                        clientY: {y}
+                    }});
+                    element.dispatchEvent(event);
+                    return true;
+                }}
+                return false;
+            """
+            
+            result = self.driver.execute_script(script)
+            self.last_activity = time.time()
+            logger.info(f"Click sent at ({x}, {y}) - result: {result}")
+            return True, f"Click sent at ({x}, {y})"
+            
+        except Exception as e:
+            logger.error(f"Error sending click: {e}")
+            return False, f"Error: {str(e)}"
+    
+    def send_scroll(self, delta_x, delta_y):
+        """Send scroll event"""
+        try:
+            if not self.driver:
+                return False, "Driver not initialized"
+            
+            # Execute JavaScript to scroll
+            script = f"window.scrollBy({delta_x}, {delta_y});"
+            self.driver.execute_script(script)
+            self.last_activity = time.time()
+            logger.info(f"Scroll sent: dx={delta_x}, dy={delta_y}")
+            return True, f"Scrolled by ({delta_x}, {delta_y})"
+            
+        except Exception as e:
+            logger.error(f"Error sending scroll: {e}")
+            return False, f"Error: {str(e)}"
+    
+    def send_text(self, text):
+        """Send text input to focused element"""
+        try:
+            if not self.driver:
+                return False, "Driver not initialized"
+            
+            # Get active element and send keys
+            from selenium.webdriver.common.action_chains import ActionChains
+            actions = ActionChains(self.driver)
+            actions.send_keys(text)
+            actions.perform()
+            
+            self.last_activity = time.time()
+            logger.info(f"Text sent: {text[:20]}...")
+            return True, "Text sent successfully"
+            
+        except Exception as e:
+            logger.error(f"Error sending text: {e}")
+            return False, f"Error: {str(e)}"
+    
     def keepalive(self):
         """Update last activity timestamp to keep session alive"""
         self.last_activity = time.time()
@@ -146,12 +247,12 @@ class BrowserSession:
         return (time.time() - self.last_activity) > timeout
     
     def capture_frame(self):
-        """Capture current browser frame as PNG screenshot"""
+        """Capture current browser frame as PNG screenshot - optimized for high FPS"""
         try:
             if not self.driver:
                 return None
             
-            # Capture screenshot as PNG
+            # Direct screenshot capture - fastest method for 30 FPS
             screenshot = self.driver.get_screenshot_as_png()
             
             with self.frame_lock:
@@ -350,6 +451,79 @@ def session_info(session_id):
         return jsonify({'error': 'Failed to get session info'}), 500
 
 
+@app.route('/api/session/<session_id>/input/click', methods=['POST'])
+def send_click(session_id):
+    """Send click input to browser session"""
+    try:
+        if session_id not in active_sessions:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        data = request.get_json() or {}
+        x = data.get('x', 0)
+        y = data.get('y', 0)
+        
+        session = active_sessions[session_id]
+        success, message = session.send_click(x, y)
+        
+        return jsonify({
+            'success': success,
+            'message': message,
+            'coordinates': {'x': x, 'y': y}
+        }), 200 if success else 500
+        
+    except Exception as e:
+        logger.error(f"Error sending click: {e}")
+        return jsonify({'error': 'Failed to send click'}), 500
+
+
+@app.route('/api/session/<session_id>/input/scroll', methods=['POST'])
+def send_scroll(session_id):
+    """Send scroll input to browser session"""
+    try:
+        if session_id not in active_sessions:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        data = request.get_json() or {}
+        delta_x = data.get('deltaX', 0)
+        delta_y = data.get('deltaY', 0)
+        
+        session = active_sessions[session_id]
+        success, message = session.send_scroll(delta_x, delta_y)
+        
+        return jsonify({
+            'success': success,
+            'message': message,
+            'scroll': {'deltaX': delta_x, 'deltaY': delta_y}
+        }), 200 if success else 500
+        
+    except Exception as e:
+        logger.error(f"Error sending scroll: {e}")
+        return jsonify({'error': 'Failed to send scroll'}), 500
+
+
+@app.route('/api/session/<session_id>/input/text', methods=['POST'])
+def send_text(session_id):
+    """Send text input to browser session"""
+    try:
+        if session_id not in active_sessions:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        data = request.get_json() or {}
+        text = data.get('text', '')
+        
+        session = active_sessions[session_id]
+        success, message = session.send_text(text)
+        
+        return jsonify({
+            'success': success,
+            'message': message
+        }), 200 if success else 500
+        
+    except Exception as e:
+        logger.error(f"Error sending text: {e}")
+        return jsonify({'error': 'Failed to send text'}), 500
+
+
 @app.route('/api/session/<session_id>/close', methods=['POST', 'DELETE'])
 def close_session(session_id):
     """Close a browser session"""
@@ -439,13 +613,18 @@ def get_frame(session_id):
         if frame is None:
             return jsonify({'error': 'Failed to capture frame'}), 500
         
-        # Return image directly
-        return send_file(
+        # Return image directly with cache control for high FPS streaming
+        response = send_file(
             BytesIO(frame),
             mimetype='image/png',
             as_attachment=False,
             download_name=f'{session_id}_frame.png'
         )
+        # Prevent caching to ensure fresh frames at 30 FPS
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
         
     except Exception as e:
         logger.error(f"Error getting frame: {e}")
@@ -713,6 +892,216 @@ def vnc_info():
     }), 200
 
 
+# ============================================================================
+# WebSocket Event Handlers for Real-time Framebuffer Streaming
+# ============================================================================
+
+@socketio.on('connect')
+def handle_websocket_connect():
+    """Handle new WebSocket connection"""
+    logger.info(f"WebSocket client connected: {request.sid}")
+    emit('status', {'message': 'Connected to Jiomosa renderer', 'type': 'connection'})
+
+
+@socketio.on('disconnect')
+def handle_websocket_disconnect():
+    """Handle WebSocket disconnection"""
+    logger.info(f"WebSocket client disconnected: {request.sid}")
+    # Clean up any active subscriptions
+    if ws_handler:
+        ws_handler.handle_unsubscribe(request.sid)
+
+
+@socketio.on('subscribe')
+def handle_subscribe(data):
+    """Subscribe to framebuffer streaming for a session
+    
+    Expected data: {'session_id': 'session-xyz'}
+    """
+    global ws_handler
+    if not ws_handler:
+        emit('error', {'message': 'WebSocket handler not initialized'})
+        return
+    
+    session_id = data.get('session_id')
+    if not session_id:
+        emit('error', {'message': 'session_id is required'})
+        return
+    
+    if session_id not in active_sessions:
+        emit('error', {'message': f'Session {session_id} not found'})
+        return
+    
+    logger.info(f"Client {request.sid} subscribed to session {session_id}")
+    ws_handler.handle_subscribe(request.sid, session_id, emit)
+    emit('subscribed', {'session_id': session_id, 'message': 'Subscribed to framebuffer stream'})
+
+
+@socketio.on('unsubscribe')
+def handle_unsubscribe(data):
+    """Unsubscribe from framebuffer streaming"""
+    global ws_handler
+    if ws_handler:
+        session_id = data.get('session_id', 'unknown')
+        logger.info(f"Client {request.sid} unsubscribed from session {session_id}")
+        ws_handler.handle_unsubscribe(request.sid)
+    emit('unsubscribed', {'message': 'Unsubscribed from framebuffer stream'})
+
+
+@socketio.on('input:click')
+def handle_input_click(data):
+    """Handle click input event
+    
+    Expected data: {'x': 100, 'y': 200}
+    """
+    global ws_handler
+    if not ws_handler:
+        emit('error', {'message': 'WebSocket handler not initialized'})
+        return
+    
+    session_id = ws_handler.get_session_id_for_client(request.sid)
+    if not session_id or session_id not in active_sessions:
+        emit('error', {'message': 'Not subscribed to any session'})
+        return
+    
+    x = data.get('x')
+    y = data.get('y')
+    if x is None or y is None:
+        emit('error', {'message': 'x and y coordinates required'})
+        return
+    
+    try:
+        session = active_sessions[session_id]
+        session.send_click(x, y)
+        logger.debug(f"Click event sent to {session_id}: ({x}, {y})")
+        emit('input:acknowledged', {'type': 'click', 'x': x, 'y': y})
+    except Exception as e:
+        logger.error(f"Error sending click to {session_id}: {e}")
+        emit('error', {'message': f'Failed to send click: {str(e)}'})
+
+
+@socketio.on('input:scroll')
+def handle_input_scroll(data):
+    """Handle scroll input event
+    
+    Expected data: {'deltaX': 0, 'deltaY': 50}
+    """
+    global ws_handler
+    if not ws_handler:
+        emit('error', {'message': 'WebSocket handler not initialized'})
+        return
+    
+    session_id = ws_handler.get_session_id_for_client(request.sid)
+    if not session_id or session_id not in active_sessions:
+        emit('error', {'message': 'Not subscribed to any session'})
+        return
+    
+    deltaX = data.get('deltaX', 0)
+    deltaY = data.get('deltaY', 0)
+    
+    try:
+        session = active_sessions[session_id]
+        session.send_scroll(deltaX, deltaY)
+        logger.debug(f"Scroll event sent to {session_id}: ({deltaX}, {deltaY})")
+        emit('input:acknowledged', {'type': 'scroll', 'deltaX': deltaX, 'deltaY': deltaY})
+    except Exception as e:
+        logger.error(f"Error sending scroll to {session_id}: {e}")
+        emit('error', {'message': f'Failed to send scroll: {str(e)}'})
+
+
+@socketio.on('input:text')
+def handle_input_text(data):
+    """Handle text input event
+    
+    Expected data: {'text': 'hello'}
+    """
+    global ws_handler
+    if not ws_handler:
+        emit('error', {'message': 'WebSocket handler not initialized'})
+        return
+    
+    session_id = ws_handler.get_session_id_for_client(request.sid)
+    if not session_id or session_id not in active_sessions:
+        emit('error', {'message': 'Not subscribed to any session'})
+        return
+    
+    text = data.get('text', '')
+    if not text:
+        emit('error', {'message': 'text is required'})
+        return
+    
+    try:
+        session = active_sessions[session_id]
+        session.send_text(text)
+        logger.debug(f"Text event sent to {session_id}: '{text}'")
+        emit('input:acknowledged', {'type': 'text', 'length': len(text)})
+    except Exception as e:
+        logger.error(f"Error sending text to {session_id}: {e}")
+        emit('error', {'message': f'Failed to send text: {str(e)}'})
+
+
+@socketio.on('quality:set')
+def handle_quality_set(data):
+    """Set JPEG quality for frame compression
+    
+    Expected data: {'quality': 75}  # 1-100
+    """
+    global ws_handler
+    if not ws_handler:
+        emit('error', {'message': 'WebSocket handler not initialized'})
+        return
+    
+    quality = data.get('quality')
+    if quality is None or not (1 <= quality <= 100):
+        emit('error', {'message': 'quality must be between 1 and 100'})
+        return
+    
+    client_id = request.sid
+    ws_handler.set_quality(client_id, quality)
+    logger.info(f"Quality set to {quality} for client {client_id}")
+    emit('quality:updated', {'quality': quality})
+
+
+@socketio.on('fps:set')
+def handle_fps_set(data):
+    """Set target FPS for frame streaming
+    
+    Expected data: {'fps': 30}  # 1-60
+    """
+    global ws_handler
+    if not ws_handler:
+        emit('error', {'message': 'WebSocket handler not initialized'})
+        return
+    
+    fps = data.get('fps')
+    if fps is None or not (1 <= fps <= 60):
+        emit('error', {'message': 'fps must be between 1 and 60'})
+        return
+    
+    client_id = request.sid
+    ws_handler.set_fps(client_id, fps)
+    logger.info(f"FPS set to {fps} for client {client_id}")
+    emit('fps:updated', {'fps': fps})
+
+
+@socketio.on('adaptive:toggle')
+def handle_adaptive_toggle(data):
+    """Toggle adaptive quality mode
+    
+    Expected data: {'enabled': True}
+    """
+    global ws_handler
+    if not ws_handler:
+        emit('error', {'message': 'WebSocket handler not initialized'})
+        return
+    
+    enabled = data.get('enabled', True)
+    client_id = request.sid
+    ws_handler.toggle_adaptive_mode(client_id, enabled)
+    logger.info(f"Adaptive mode set to {enabled} for client {client_id}")
+    emit('adaptive:updated', {'enabled': enabled})
+
+
 if __name__ == '__main__':
     logger.info("Starting Jiomosa Renderer Service")
     logger.info(f"Selenium: {SELENIUM_HOST}:{SELENIUM_PORT}")
@@ -721,6 +1110,10 @@ if __name__ == '__main__':
     logger.info(f"Session Timeout: {SESSION_TIMEOUT} seconds")
     logger.info(f"Frame Capture Interval: {FRAME_CAPTURE_INTERVAL} seconds")
     
+    # Initialize WebSocket handler
+    ws_handler = WebSocketHandler(socketio, active_sessions)
+    logger.info("WebSocket handler initialized")
+    
     # Start cleanup thread
     cleanup_thread = threading.Thread(target=cleanup_expired_sessions, daemon=True)
     cleanup_thread.start()
@@ -728,4 +1121,4 @@ if __name__ == '__main__':
     
     # Debug mode disabled for security - use environment variable to enable if needed
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
-    app.run(host='0.0.0.0', port=5000, debug=debug_mode)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=debug_mode, allow_unsafe_werkzeug=True)
