@@ -341,48 +341,25 @@ curl --connect-timeout 5 localhost:5900
 # Check Chrome container logs
 docker logs jiomosa-chrome
 
-# Note: Port 5900 is for VNC clients only, not web browsers
-# Use port 7900 for web browser access via noVNC
+# Note: noVNC is optional for debugging
+# Primary method is WebSocket streaming via Android WebApp or Socket.IO client
 ```
 
-### Guacamole Not Working (404 or Login Errors)
+### WebSocket Connection Issues
 
 ```bash
-# Check if Guacamole is accessible at the correct path
-curl -I http://localhost:8080/guacamole/
+# Check if WebSocket server is running
+curl http://localhost:5000/health
 
-# If you get 404, the service might not be started properly
-docker logs jiomosa-guacamole --tail 20
+# Test Socket.IO endpoint
+curl -i http://localhost:5000/socket.io/
 
-# Check if database is properly initialized
-docker exec jiomosa-postgres psql -U guacamole_user -d guacamole_db -c "SELECT COUNT(*) FROM guacamole_user;"
+# Check renderer logs for WebSocket errors
+docker logs jiomosa-renderer --tail 50 | grep -i websocket
 
-# If the tables are missing, rebuild the volume and let the init scripts re-run
-docker compose down -v
-docker compose up -d postgres
-sleep 10
-docker compose up -d
-
-# Schema files live under scripts/guacamole-init and include the default admin user.
-# Default login: username=guacadmin, password=guacadmin
+# Verify WebSocket handler is initialized
+docker logs jiomosa-renderer | grep "WebSocket handler initialized"
 ```
-
-### Guacamole "Unexpected Internal Error" on Login
-
-If you see "An error has occurred and this action cannot be completed" when accessing Guacamole, the web app could not log in to PostgreSQL (usually because the password was missing).
-
-1. Confirm the Guacamole service receives the `POSTGRESQL_*` variables:
-    ```bash
-    docker compose config | grep -A3 POSTGRESQL_
-    ```
-2. Restart only the Guacamole container so it reloads the credentials:
-    ```bash
-    docker compose up -d guacamole
-    ```
-3. Verify login via API (HTTP 200 returns an auth token):
-    ```bash
-    curl -s -X POST http://localhost:8080/guacamole/api/tokens \
-      -H "Content-Type: application/x-www-form-urlencoded" \
       -d "username=guacadmin&password=guacadmin"
     ```
 

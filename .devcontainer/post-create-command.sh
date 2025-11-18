@@ -26,9 +26,6 @@ docker compose version
 # Pull required images to speed up first run
 echo "Pre-pulling Docker images (this may take a few minutes)..."
 docker pull selenium/standalone-chrome:latest &
-docker pull guacamole/guacd:latest &
-docker pull guacamole/guacamole:latest &
-docker pull postgres:15 &
 wait
 
 # Build the renderer service
@@ -45,8 +42,9 @@ echo ""
 echo "Quick Start:"
 echo "  1. Start services:  docker compose up -d"
 echo "  2. Check health:    curl http://localhost:5000/health"
-echo "  3. Run demo:        bash examples/quick_demo.sh"
-echo "  4. View browser:    Access port 7900 in VS Code Ports tab"
+echo "  3. Open WebApp:     Access port 9000 in VS Code Ports tab"
+echo "  4. Run demo:        bash examples/quick_demo.sh"
+echo "  5. View browser:    Access port 7900 in VS Code Ports tab (optional)"
 echo ""
 echo "Documentation:"
 echo "  - CODESPACES.md    - GitHub Codespaces guide"
