@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#000000">
+    <title>Jiomosa Browser</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: #000;
+            overflow: hidden;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #toolbar {
+            background: #1a1a1a;
+            color: white;
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            z-index: 1000;
+        }
+        
+        #toolbar .left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        #toolbar button {
+            background: transparent;
+            border: none;
+            color: white;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        
+        #toolbar button:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        
+        #url-display {
+            font-size: 14px;
+            color: #aaa;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 300px;
+        }
+        
+        #status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+        }
+        
+        #status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #666;
+        }
+        
+        #status-indicator.connecting {
+            background: #FFA500;
+            animation: pulse 1s infinite;
+        }
+        
+        #status-indicator.connected {
+            background: #4CAF50;
+        }
+        
+        #status-indicator.error {
+            background: #F44336;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        #video-container {
+            flex: 1;
+            position: relative;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        #remoteVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #000;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(255,255,255,0.1);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .control-btn {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: rgba(98, 0, 238, 0.9);
+            border: none;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transition: all 0.2s;
+        }
+        
+        .control-btn:hover {
+            transform: scale(1.1);
+            background: rgba(98, 0, 238, 1);
+        }
+        
+        .control-btn:active {
+            transform: scale(0.95);
+        }
+        
+        #error-dialog {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 400px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            z-index: 2000;
+        }
+        
+        #error-dialog.show {
+            display: block;
+        }
+        
+        #error-dialog h3 {
+            color: #F44336;
+            margin-bottom: 12px;
+        }
+        
+        #error-dialog button {
+            background: #6200EE;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 24px;
+            cursor: pointer;
+            margin-top: 16px;
+            width: 100%;
+        }
+        
+        @media (max-width: 768px) {
+            #url-display {
+                max-width: 150px;
+            }
+            
+            #controls {
+                bottom: 12px;
+                right: 12px;
+            }
+            
+            .control-btn {
+                width: 48px;
+                height: 48px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="toolbar">
+            <div class="left">
+                <button onclick="goBack()">
+                    <span class="material-icons">arrow_back</span>
+                </button>
+                <div id="url-display">{{ url }}</div>
+            </div>
+            <div id="status">
+                <div id="status-indicator"></div>
+                <span id="status-text">Connecting...</span>
+            </div>
+        </div>
+        
+        <div id="video-container">
+            <video id="remoteVideo" autoplay playsinline></video>
+            
+            <div id="loading">
+                <div class="spinner"></div>
+                <p>Initializing browser session...</p>
+            </div>
+        </div>
+        
+        <div id="controls">
+            <button class="control-btn" onclick="refreshPage()" title="Refresh">
+                <span class="material-icons">refresh</span>
+            </button>
+        </div>
+    </div>
+    
+    <div id="error-dialog">
+        <h3>Connection Error</h3>
+        <p id="error-message"></p>
+        <button onclick="retryConnection()">Retry</button>
+    </div>
+    
+    <script src="/static/webrtc-client.js"></script>
+    <script>
+        const WEBRTC_SERVER = '{{ webrtc_server }}';
+        const TARGET_URL = '{{ url }}';
+        
+        let client = null;
+        let sessionId = null;
+        
+        // Initialize
+        async function init() {
+            try {
+                // Create session
+                updateStatus('connecting', 'Creating session...');
+                const response = await fetch(`${WEBRTC_SERVER}/api/session/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                
+                const data = await response.json();
+                sessionId = data.session_id;
+                
+                console.log('Session created:', sessionId);
+                
+                // Load URL
+                updateStatus('connecting', 'Loading website...');
+                await fetch(`${WEBRTC_SERVER}/api/session/${sessionId}/load`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: TARGET_URL })
+                });
+                
+                console.log('URL loaded');
+                
+                // Connect WebRTC
+                updateStatus('connecting', 'Connecting WebRTC...');
+                client = new JiomosaWebRTCClient(WEBRTC_SERVER, sessionId);
+                
+                client.onStatus((state, message) => {
+                    updateStatus(state, message);
+                    if (state === 'connected') {
+                        document.getElementById('loading').style.display = 'none';
+                    }
+                });
+                
+                client.onError((message, error) => {
+                    showError(message);
+                });
+                
+                const videoElement = document.getElementById('remoteVideo');
+                await client.connect(videoElement);
+                
+                // Start keep-alive
+                client.startKeepAlive();
+                
+                // Setup input handlers
+                setupInputHandlers();
+                
+            } catch (error) {
+                console.error('Initialization error:', error);
+                showError('Failed to initialize: ' + error.message);
+            }
+        }
+        
+        function setupInputHandlers() {
+            const video = document.getElementById('remoteVideo');
+            
+            // Click/Touch
+            video.addEventListener('click', (e) => {
+                const rect = video.getBoundingClientRect();
+                const scaleX = 720 / rect.width;  // Server viewport width
+                const scaleY = 1280 / rect.height; // Server viewport height
+                const x = (e.clientX - rect.left) * scaleX;
+                const y = (e.clientY - rect.top) * scaleY;
+                
+                client.sendClick(x, y);
+            });
+            
+            // Touch events for mobile
+            video.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const rect = video.getBoundingClientRect();
+                const scaleX = 720 / rect.width;
+                const scaleY = 1280 / rect.height;
+                const x = (touch.clientX - rect.left) * scaleX;
+                const y = (touch.clientY - rect.top) * scaleY;
+                
+                client.sendClick(x, y);
+            });
+            
+            // Scroll
+            video.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                client.sendScroll(e.deltaY);
+            });
+            
+            // Touch scroll
+            let touchStartY = 0;
+            video.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const deltaY = touchStartY - touch.clientY;
+                touchStartY = touch.clientY;
+                client.sendScroll(deltaY);
+            });
+            
+            video.addEventListener('touchstart', (e) => {
+                touchStartY = e.touches[0].clientY;
+            });
+        }
+        
+        function updateStatus(state, message) {
+            const indicator = document.getElementById('status-indicator');
+            const text = document.getElementById('status-text');
+            
+            indicator.className = state;
+            text.textContent = message;
+        }
+        
+        function showError(message) {
+            document.getElementById('error-message').textContent = message;
+            document.getElementById('error-dialog').classList.add('show');
+        }
+        
+        function hideError() {
+            document.getElementById('error-dialog').classList.remove('show');
+        }
+        
+        function retryConnection() {
+            hideError();
+            location.reload();
+        }
+        
+        function goBack() {
+            if (client) {
+                client.disconnect();
+            }
+            if (sessionId) {
+                fetch(`${WEBRTC_SERVER}/api/session/${sessionId}`, { method: 'DELETE' });
+            }
+            window.history.back();
+        }
+        
+        function refreshPage() {
+            location.reload();
+        }
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (client) {
+                client.disconnect();
+            }
+            if (sessionId) {
+                navigator.sendBeacon(`${WEBRTC_SERVER}/api/session/${sessionId}`, 'DELETE');
+            }
+        });
+        
+        // Start
+        init();
+    </script>
+</body>
+</html>
