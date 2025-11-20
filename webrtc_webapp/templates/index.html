@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#6200EE">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Jiomosa - Cloud Browser</title>
+    
+    <!-- Material Design 3 -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --primary: #6200EE;
+            --primary-variant: #3700B3;
+            --secondary: #03DAC6;
+            --background: #FFFFFF;
+            --surface: #FFFFFF;
+            --error: #B00020;
+            --on-primary: #FFFFFF;
+            --on-secondary: #000000;
+            --on-background: #000000;
+            --on-surface: #000000;
+        }
+        
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: var(--on-background);
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .search-bar {
+            background: white;
+            border-radius: 28px;
+            padding: 12px 24px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+        }
+        
+        .search-bar input {
+            flex: 1;
+            border: none;
+            outline: none;
+            font-size: 16px;
+            font-family: 'Roboto', sans-serif;
+        }
+        
+        .search-bar button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .search-bar button:hover {
+            transform: scale(1.1);
+        }
+        
+        .app-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .app-card {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        
+        .app-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+        }
+        
+        .app-icon {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            display: block;
+        }
+        
+        .app-name {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .footer {
+            text-align: center;
+            color: white;
+            margin-top: 40px;
+            opacity: 0.8;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .app-grid {
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+                gap: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌐 Jiomosa</h1>
+            <p>Cloud Browser for Android</p>
+        </div>
+        
+        <div class="search-bar">
+            <input type="url" id="customUrl" placeholder="Enter any website URL..." />
+            <button onclick="openCustomUrl()">
+                <span class="material-icons">arrow_forward</span>
+            </button>
+        </div>
+        
+        <div class="app-grid">
+            {% for app in apps %}
+            <a href="/viewer?url={{ app.url }}" class="app-card" data-url="{{ app.url }}">
+                <span class="app-icon">{{ app.icon }}</span>
+                <div class="app-name">{{ app.name }}</div>
+            </a>
+            {% endfor %}
+        </div>
+        
+        <div class="footer">
+            <p>Powered by WebRTC • Low Latency Streaming</p>
+            <p style="font-size: 0.9rem; margin-top: 10px;">
+                <a href="https://github.com/SharksJio/jiomosa" style="color: white;">GitHub</a>
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        function openCustomUrl() {
+            const input = document.getElementById('customUrl');
+            let url = input.value.trim();
+            
+            if (!url) {
+                alert('Please enter a URL');
+                return;
+            }
+            
+            // Add protocol if missing
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                url = 'https://' + url;
+            }
+            
+            // Validate URL
+            try {
+                new URL(url);
+                window.location.href = '/viewer?url=' + encodeURIComponent(url);
+            } catch (e) {
+                alert('Invalid URL. Please enter a valid website address.');
+            }
+        }
+        
+        // Allow Enter key in search bar
+        document.getElementById('customUrl').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                openCustomUrl();
+            }
+        });
+    </script>
+</body>
+</html>

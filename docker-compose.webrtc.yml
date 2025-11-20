@@ -1,0 +1,88 @@
+services:
+  # WebRTC Renderer - Modern FastAPI + aiortc streaming server
+  webrtc-renderer:
+    build:
+      context: ./webrtc_renderer
+      dockerfile: Dockerfile
+    container_name: jiomosa-webrtc-renderer
+    restart: unless-stopped
+    environment:
+      - DEBUG=false
+      - WEBRTC_VIDEO_WIDTH=720
+      - WEBRTC_VIDEO_HEIGHT=1280
+      - WEBRTC_FRAMERATE=30
+      - WEBRTC_DEFAULT_BITRATE=1500000
+      - BROWSER_MAX_SESSIONS=10
+      - SESSION_CLEANUP_INTERVAL=60
+    ports:
+      - "8000:8000"
+    networks:
+      - jiomosa-webrtc-network
+    volumes:
+      - ./webrtc_renderer:/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # WebRTC WebApp - Modern Material Design PWA for Android
+  webrtc-webapp:
+    build:
+      context: ./webrtc_webapp
+      dockerfile: Dockerfile
+    container_name: jiomosa-webrtc-webapp
+    restart: unless-stopped
+    environment:
+      - WEBRTC_SERVER=http://webrtc-renderer:8000
+    ports:
+      - "9000:9000"
+    depends_on:
+      - webrtc-renderer
+    networks:
+      - jiomosa-webrtc-network
+    volumes:
+      - ./webrtc_webapp:/app
+
+  # Optional: TURN server for NAT traversal (coturn)
+  # Uncomment if you need TURN support for production deployment
+  # turn-server:
+  #   image: coturn/coturn:latest
+  #   container_name: jiomosa-turn-server
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3478:3478/tcp"
+  #     - "3478:3478/udp"
+  #     - "5349:5349/tcp"
+  #     - "5349:5349/udp"
+  #     - "49152-65535:49152-65535/udp"
+  #   environment:
+  #     - EXTERNAL_IP=YOUR_PUBLIC_IP
+  #     - REALM=jiomosa.local
+  #     - USERNAME=jiomosa
+  #     - PASSWORD=changeme
+  #   networks:
+  #     - jiomosa-webrtc-network
+  #   volumes:
+  #     - ./turnserver.conf:/etc/coturn/turnserver.conf
+
+  # Optional: Redis for distributed session management
+  # Uncomment for multi-server deployments
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: jiomosa-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   networks:
+  #     - jiomosa-webrtc-network
+  #   volumes:
+  #     - redis-data:/data
+
+networks:
+  jiomosa-webrtc-network:
+    driver: bridge
+
+# volumes:
+#   redis-data:
