@@ -79,7 +79,8 @@ class BrowserSession:
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
             
-            # Mobile viewport size (similar to iPhone/Android)
+            # Consistent viewport size - use a standard mobile size that matches window size
+            # This ensures clicks work correctly without coordinate translation issues
             chrome_options.add_argument('--window-size=390,844')
             chrome_options.add_argument('--window-position=0,0')
             
@@ -94,8 +95,9 @@ class BrowserSession:
             chrome_options.add_argument(f'--user-agent={mobile_user_agent}')
             
             # Mobile emulation for proper responsive rendering
+            # Set pixelRatio to 1.0 to avoid coordinate scaling issues
             mobile_emulation = {
-                'deviceMetrics': {'width': 390, 'height': 844, 'pixelRatio': 3.0},
+                'deviceMetrics': {'width': 390, 'height': 844, 'pixelRatio': 1.0},
                 'userAgent': mobile_user_agent
             }
             chrome_options.add_experimental_option('mobileEmulation', mobile_emulation)
@@ -112,6 +114,10 @@ class BrowserSession:
                 command_executor=selenium_url,
                 options=chrome_options
             )
+            
+            # Force window size to match viewport exactly to prevent coordinate mismatch
+            self.driver.set_window_size(390, 844)
+            
             logger.info(f"Browser session {self.session_id} initialized")
             return True
         except Exception as e:
@@ -165,7 +171,7 @@ class BrowserSession:
             return None
     
     def send_click(self, x, y):
-        """Send click event at specified coordinates"""
+        """Send click event at specified coordinates - improved for navigation"""
         try:
             if not self.driver:
                 return False, "Driver not initialized"
@@ -174,64 +180,76 @@ class BrowserSession:
             viewport_size = self.driver.execute_script("return {width: window.innerWidth, height: window.innerHeight};")
             logger.info(f"Click at ({x}, {y}), viewport: {viewport_size}")
             
-            # Method 1: Use ActionChains for a real browser click
-            try:
-                actions = ActionChains(self.driver)
-                # Move to the coordinates and click
-                actions.move_by_offset(x, y).click().perform()
-                # Reset the offset for next action
-                actions.move_by_offset(-x, -y).perform()
-                
-                self.last_activity = time.time()
-                logger.info(f"Click sent at ({x}, {y}) using ActionChains")
-                return True, f"Click sent at ({x}, {y})"
-            except Exception as e1:
-                logger.warning(f"ActionChains click failed, trying JavaScript: {e1}")
-                
-                # Method 2: Fallback to JavaScript click
-                script = f"""
-                    var element = document.elementFromPoint({x}, {y});
-                    if (element) {{
-                        console.log('Clicking element at ({x}, {y}):', element.tagName, element.className);
-                        
-                        // Try multiple click methods for better compatibility
-                        element.click();
-                        
-                        // Also dispatch mouse events for sites that listen to those
-                        var mousedown = new MouseEvent('mousedown', {{
-                            view: window,
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: {x},
-                            clientY: {y}
-                        }});
-                        var mouseup = new MouseEvent('mouseup', {{
-                            view: window,
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: {x},
-                            clientY: {y}
-                        }});
-                        var click = new MouseEvent('click', {{
-                            view: window,
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: {x},
-                            clientY: {y}
-                        }});
-                        
-                        element.dispatchEvent(mousedown);
-                        element.dispatchEvent(mouseup);
-                        element.dispatchEvent(click);
-                        
-                        return element.tagName + ' ' + (element.className || element.id || 'no-id') + ' clicked';
+            # Use JavaScript-based click for better reliability and navigation support
+            # This method works better for links, buttons, and interactive elements
+            script = f"""
+                var element = document.elementFromPoint({x}, {y});
+                if (element) {{
+                    console.log('Clicking element at ({x}, {y}):', element.tagName, element.className, element.href || '');
+                    
+                    // Scroll element into view if needed
+                    element.scrollIntoView({{behavior: 'instant', block: 'nearest'}});
+                    
+                    // Focus the element if it's focusable
+                    if (element.focus) {{
+                        element.focus();
                     }}
-                    return 'No element found at ' + {x} + ',' + {y};
-                """
-                
-                result = self.driver.execute_script(script)
-                self.last_activity = time.time()
-                logger.info(f"Click sent at ({x}, {y}) via JavaScript - result: {result}")
+                    
+                    // Dispatch complete mouse event sequence for maximum compatibility
+                    var mousedown = new MouseEvent('mousedown', {{
+                        view: window,
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: {x},
+                        clientY: {y},
+                        button: 0
+                    }});
+                    var mouseup = new MouseEvent('mouseup', {{
+                        view: window,
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: {x},
+                        clientY: {y},
+                        button: 0
+                    }});
+                    var click = new MouseEvent('click', {{
+                        view: window,
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: {x},
+                        clientY: {y},
+                        button: 0
+                    }});
+                    
+                    element.dispatchEvent(mousedown);
+                    element.dispatchEvent(mouseup);
+                    element.dispatchEvent(click);
+                    
+                    // Also call native click() for links and buttons
+                    element.click();
+                    
+                    return {{
+                        success: true,
+                        element: element.tagName,
+                        id: element.id || '',
+                        class: element.className || '',
+                        href: element.href || '',
+                        text: element.textContent ? element.textContent.substring(0, 50) : ''
+                    }};
+                }}
+                return {{success: false, error: 'No element found at ' + {x} + ',' + {y}}};
+            """
+            
+            result = self.driver.execute_script(script)
+            self.last_activity = time.time()
+            
+            if isinstance(result, dict) and result.get('success'):
+                logger.info(f"Click sent at ({x}, {y}) - element: {result.get('element')} {result.get('class', '')} {result.get('text', '')[:30]}")
+                # Give page time to process the click and start navigation if needed
+                time.sleep(0.1)
+                return True, f"Click sent at ({x}, {y})"
+            else:
+                logger.warning(f"Click at ({x}, {y}) - {result}")
                 return True, f"Click sent at ({x}, {y})"
             
         except Exception as e:
@@ -256,19 +274,47 @@ class BrowserSession:
             return False, f"Error: {str(e)}"
     
     def send_text(self, text):
-        """Send text input to focused element"""
+        """Send text input to focused element - improved with element detection"""
         try:
             if not self.driver:
                 return False, "Driver not initialized"
             
-            # Get active element and send keys
+            # First, try to find an active/focused input element
+            # If none is focused, try to find any visible input field and focus it
+            script = """
+                var activeElement = document.activeElement;
+                var isInputFocused = activeElement && 
+                    (activeElement.tagName === 'INPUT' || 
+                     activeElement.tagName === 'TEXTAREA' || 
+                     activeElement.isContentEditable);
+                
+                if (!isInputFocused) {
+                    // Try to find and focus a visible input field
+                    var inputs = document.querySelectorAll('input[type="text"], input[type="search"], input:not([type]), textarea, [contenteditable="true"]');
+                    for (var i = 0; i < inputs.length; i++) {
+                        var input = inputs[i];
+                        if (input.offsetParent !== null) { // Check if visible
+                            input.focus();
+                            input.scrollIntoView({behavior: 'instant', block: 'center'});
+                            return {focused: true, element: input.tagName, id: input.id || '', type: input.type || ''};
+                        }
+                    }
+                    return {focused: false, error: 'No input element found'};
+                }
+                return {focused: true, element: activeElement.tagName, id: activeElement.id || '', type: activeElement.type || ''};
+            """
+            
+            focus_result = self.driver.execute_script(script)
+            logger.info(f"Text input focus check: {focus_result}")
+            
+            # Now send the text using ActionChains for natural typing
             from selenium.webdriver.common.action_chains import ActionChains
             actions = ActionChains(self.driver)
             actions.send_keys(text)
             actions.perform()
             
             self.last_activity = time.time()
-            logger.info(f"Text sent: {text[:20]}...")
+            logger.info(f"Text sent: {text[:50]}...")
             return True, "Text sent successfully"
             
         except Exception as e:

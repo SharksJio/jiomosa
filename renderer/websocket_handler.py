@@ -147,7 +147,7 @@ class WebSocketHandler:
             if session_id not in self.frame_deltas:
                 self.frame_deltas[session_id] = FrameDelta()
             
-            self.client_quality[client_id] = 85  # JPEG quality (1-100)
+            self.client_quality[client_id] = 75  # Start with moderate quality for better FPS
             self.client_fps[client_id] = 30  # Start with 30 FPS for responsive streaming
             self.client_sessions[client_id] = session_id
             self.bandwidth_monitors[client_id] = BandwidthMonitor(client_id)
@@ -238,16 +238,21 @@ class WebSocketHandler:
         logger.info(f"Client {client_id} adaptive mode: {'ON' if enabled else 'OFF'}")
     
     def encode_frame_for_websocket(self, frame_data, client_id):
-        """Encode frame as base64 for WebSocket transmission"""
+        """Encode frame as base64 for WebSocket transmission - optimized for speed"""
         try:
-            quality = self.client_quality.get(client_id, 85)
+            quality = self.client_quality.get(client_id, 75)
             
             # Convert PNG to JPEG with adjustable quality
+            # Use fastest PIL settings for better FPS
             img = Image.open(BytesIO(frame_data))
             
-            # Optimize size with quality
+            # Convert to RGB if necessary (some screenshots might be RGBA)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Optimize size with quality - disable optimize flag for speed
             buffer = BytesIO()
-            img.save(buffer, format='JPEG', quality=quality, optimize=True)
+            img.save(buffer, format='JPEG', quality=quality, optimize=False)
             buffer.seek(0)
             
             # Encode as base64 for WebSocket
