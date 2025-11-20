@@ -14,6 +14,7 @@ from websocket_handler import WebSocketHandler
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
@@ -169,27 +170,69 @@ class BrowserSession:
             if not self.driver:
                 return False, "Driver not initialized"
             
-            # Execute JavaScript to simulate click at coordinates
-            script = f"""
-                var element = document.elementFromPoint({x}, {y});
-                if (element) {{
-                    var event = new MouseEvent('click', {{
-                        view: window,
-                        bubbles: true,
-                        cancelable: true,
-                        clientX: {x},
-                        clientY: {y}
-                    }});
-                    element.dispatchEvent(event);
-                    return true;
-                }}
-                return false;
-            """
+            # Get current viewport dimensions for debugging
+            viewport_size = self.driver.execute_script("return {width: window.innerWidth, height: window.innerHeight};")
+            logger.info(f"Click at ({x}, {y}), viewport: {viewport_size}")
             
-            result = self.driver.execute_script(script)
-            self.last_activity = time.time()
-            logger.info(f"Click sent at ({x}, {y}) - result: {result}")
-            return True, f"Click sent at ({x}, {y})"
+            # Method 1: Use ActionChains for a real browser click
+            try:
+                actions = ActionChains(self.driver)
+                # Move to the coordinates and click
+                actions.move_by_offset(x, y).click().perform()
+                # Reset the offset for next action
+                actions.move_by_offset(-x, -y).perform()
+                
+                self.last_activity = time.time()
+                logger.info(f"Click sent at ({x}, {y}) using ActionChains")
+                return True, f"Click sent at ({x}, {y})"
+            except Exception as e1:
+                logger.warning(f"ActionChains click failed, trying JavaScript: {e1}")
+                
+                # Method 2: Fallback to JavaScript click
+                script = f"""
+                    var element = document.elementFromPoint({x}, {y});
+                    if (element) {{
+                        console.log('Clicking element at ({x}, {y}):', element.tagName, element.className);
+                        
+                        // Try multiple click methods for better compatibility
+                        element.click();
+                        
+                        // Also dispatch mouse events for sites that listen to those
+                        var mousedown = new MouseEvent('mousedown', {{
+                            view: window,
+                            bubbles: true,
+                            cancelable: true,
+                            clientX: {x},
+                            clientY: {y}
+                        }});
+                        var mouseup = new MouseEvent('mouseup', {{
+                            view: window,
+                            bubbles: true,
+                            cancelable: true,
+                            clientX: {x},
+                            clientY: {y}
+                        }});
+                        var click = new MouseEvent('click', {{
+                            view: window,
+                            bubbles: true,
+                            cancelable: true,
+                            clientX: {x},
+                            clientY: {y}
+                        }});
+                        
+                        element.dispatchEvent(mousedown);
+                        element.dispatchEvent(mouseup);
+                        element.dispatchEvent(click);
+                        
+                        return element.tagName + ' ' + (element.className || element.id || 'no-id') + ' clicked';
+                    }}
+                    return 'No element found at ' + {x} + ',' + {y};
+                """
+                
+                result = self.driver.execute_script(script)
+                self.last_activity = time.time()
+                logger.info(f"Click sent at ({x}, {y}) via JavaScript - result: {result}")
+                return True, f"Click sent at ({x}, {y})"
             
         except Exception as e:
             logger.error(f"Error sending click: {e}")
@@ -296,6 +339,86 @@ def cleanup_expired_sessions():
                     logger.error(f"Error cleaning up session {session_id}: {e}")
         except Exception as e:
             logger.error(f"Error in cleanup thread: {e}")
+
+
+def stream_frames_to_clients():
+    """Background task to capture and stream frames to subscribed clients"""
+    logger.info("Frame streaming thread started")
+    
+    while True:
+        try:
+            if not ws_handler or not ws_handler.client_sessions:
+                time.sleep(0.1)  # No clients, sleep briefly
+                continue
+            
+            # Get all unique sessions that have subscribers
+            subscribed_sessions = set(ws_handler.client_sessions.values())
+            
+            for session_id in subscribed_sessions:
+                # Get session
+                session = active_sessions.get(session_id)
+                if not session or not session.driver:
+                    continue
+                
+                # Capture frame
+                try:
+                    frame_data = session.capture_frame()
+                    if not frame_data:
+                        continue
+                    
+                    # Find all clients subscribed to this session
+                    clients_for_session = [
+                        client_id for client_id, sess_id in ws_handler.client_sessions.items()
+                        if sess_id == session_id
+                    ]
+                    
+                    # Send frame to each subscribed client
+                    for client_id in clients_for_session:
+                        try:
+                            # Get client's FPS setting
+                            client_fps = ws_handler.client_fps.get(client_id, 30)
+                            
+                            # Encode frame with client's quality settings
+                            encoded_frame, frame_size = ws_handler.encode_frame_for_websocket(frame_data, client_id)
+                            
+                            if encoded_frame:
+                                # Get bandwidth stats
+                                bandwidth_monitor = ws_handler.bandwidth_monitors.get(client_id)
+                                bandwidth_mbps = bandwidth_monitor.get_bandwidth_mbps() if bandwidth_monitor else 0
+                                
+                                # Emit frame to specific client
+                                socketio.emit('frame', {
+                                    'session_id': session_id,
+                                    'image': f'data:image/jpeg;base64,{encoded_frame}',
+                                    'timestamp': time.time(),
+                                    'stats': {
+                                        'size': frame_size,
+                                        'quality': ws_handler.client_quality.get(client_id, 85),
+                                        'fps': client_fps,
+                                        'bandwidthMbps': round(bandwidth_mbps, 2),
+                                        'adaptive': ws_handler.adaptive_mode.get(client_id, True)
+                                    }
+                                }, room=client_id)
+                                
+                        except Exception as e:
+                            logger.error(f"Error sending frame to client {client_id}: {e}")
+                
+                except Exception as e:
+                    logger.error(f"Error capturing frame for session {session_id}: {e}")
+            
+            # Sleep based on highest FPS requirement among all clients
+            if ws_handler.client_fps:
+                max_fps = max(ws_handler.client_fps.values())
+                sleep_time = 1.0 / max_fps if max_fps > 0 else 0.033  # Default ~30 FPS
+            else:
+                sleep_time = 0.033  # ~30 FPS default
+            
+            # Minimum sleep to prevent excessive CPU usage
+            time.sleep(max(sleep_time, 0.033))
+            
+        except Exception as e:
+            logger.error(f"Error in frame streaming thread: {e}")
+            time.sleep(0.1)
 
 
 @app.route('/health', methods=['GET'])
@@ -1101,6 +1224,11 @@ if __name__ == '__main__':
     cleanup_thread = threading.Thread(target=cleanup_expired_sessions, daemon=True)
     cleanup_thread.start()
     logger.info("Session cleanup thread started")
+    
+    # Start frame streaming thread
+    streaming_thread = threading.Thread(target=stream_frames_to_clients, daemon=True)
+    streaming_thread.start()
+    logger.info("Frame streaming thread started")
     
     # Debug mode disabled for security - use environment variable to enable if needed
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'

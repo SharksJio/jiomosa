@@ -75,12 +75,13 @@ class BandwidthMonitor:
         """Get recommended FPS based on bandwidth"""
         bandwidth = self.get_bandwidth_mbps()
         
+        # Default to higher FPS for local/fast connections
         if bandwidth > self.fast_threshold:
             return 30  # Full FPS for fast connections
         elif bandwidth > self.normal_threshold:
-            return 20  # Moderate FPS for normal connections
+            return 30  # Keep 30 FPS for normal connections
         else:
-            return 10  # Lower FPS for slow connections
+            return 20  # Still decent FPS for slower connections
     
     def should_adjust(self):
         """Check if it's time to adjust quality"""
@@ -147,7 +148,7 @@ class WebSocketHandler:
                 self.frame_deltas[session_id] = FrameDelta()
             
             self.client_quality[client_id] = 85  # JPEG quality (1-100)
-            self.client_fps[client_id] = 30  # Frames per second
+            self.client_fps[client_id] = 30  # Start with 30 FPS for responsive streaming
             self.client_sessions[client_id] = session_id
             self.bandwidth_monitors[client_id] = BandwidthMonitor(client_id)
             self.adaptive_mode[client_id] = True  # Enable by default

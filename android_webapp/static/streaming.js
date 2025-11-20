@@ -7,6 +7,8 @@ class FrameStreamingClient {
     constructor(options = {}) {
         this.serverUrl = options.serverUrl || `http://${window.location.hostname}:5000`;
         this.sessionId = options.sessionId;
+        this.path = options.path;
+        this.transports = options.transports;
         this.onFrame = options.onFrame || (() => {});
         this.onError = options.onError || (() => {});
         this.onConnect = options.onConnect || (() => {});
@@ -20,6 +22,7 @@ class FrameStreamingClient {
         this.adaptiveMode = true;
         this.currentQuality = 85;
         this.currentFps = 30;
+        this.isSubscribing = false; // Guard against duplicate subscriptions
         
         // Statistics
         this.stats = {
@@ -38,15 +41,40 @@ class FrameStreamingClient {
          * Initialize Socket.IO client for WebSocket communication
          * Socket.IO handles WebSocket with fallback to polling
          */
-        this.socket = io(this.serverUrl, {
-            reconnection: true,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            reconnectionAttempts: Infinity,
-            transports: ['websocket', 'polling']
-        });
-        
-        this.setupEventHandlers();
+        try {
+            // Allow overriding transports and path from options (useful for proxied polling)
+            const ioOptions = {
+                reconnection: true,
+                reconnectionDelay: 2000,
+                reconnectionDelayMax: 10000,
+                reconnectionAttempts: 5,
+                timeout: 20000,
+                transports: this.transports || ['websocket', 'polling'],
+                // Reduce polling frequency to minimize network calls
+                upgrade: true,
+                rememberUpgrade: true,
+                // Increase polling interval
+                pingInterval: 25000,
+                pingTimeout: 60000
+            };
+
+            if (this.path) {
+                ioOptions.path = this.path;
+            }
+            
+            console.log('[Streaming] Initializing Socket.IO client');
+            console.log('[Streaming] Server URL:', this.serverUrl);
+            console.log('[Streaming] Options:', JSON.stringify(ioOptions, null, 2));
+
+            this.socket = io(this.serverUrl, ioOptions);
+            
+            this.setupEventHandlers();
+            
+            console.log('[Streaming] Socket.IO client initialized successfully');
+        } catch (error) {
+            console.error('[Streaming] Failed to initialize Socket.IO client:', error);
+            this.onError(`Initialization error: ${error.message}`);
+        }
     }
     
     setupEventHandlers() {
@@ -63,6 +91,7 @@ class FrameStreamingClient {
             console.warn(`[Streaming] WebSocket disconnected: ${reason}`);
             this.isConnected = false;
             this.isStreaming = false;
+            this.isSubscribing = false; // Clear subscribing flag on disconnect
             this.onDisconnect(reason);
         });
         
@@ -77,6 +106,7 @@ class FrameStreamingClient {
         this.socket.on('subscribed', (data) => {
             console.log('[Streaming] Subscribed to session:', data.session_id);
             this.isStreaming = true;
+            this.isSubscribing = false; // Clear subscribing flag
             this.currentQuality = data.quality || 85;
             this.currentFps = data.fps || 30;
             this.adaptiveMode = data.adaptive_mode !== false;
@@ -90,11 +120,13 @@ class FrameStreamingClient {
         this.socket.on('subscribe:response', (data) => {
             console.log('[Streaming] Subscribe response:', data);
             this.isStreaming = true;
+            this.isSubscribing = false; // Clear subscribing flag
         });
         
         this.socket.on('unsubscribed', (data) => {
             console.log('[Streaming] Unsubscribed from session');
             this.isStreaming = false;
+            this.isSubscribing = false; // Clear subscribing flag
         });
         
         /**
@@ -157,6 +189,7 @@ class FrameStreamingClient {
          */
         this.socket.on('error', (data) => {
             console.error('[Streaming] Server error:', data.message);
+            this.isSubscribing = false; // Clear subscribing flag on error
             this.onError(data.message || 'Unknown error');
         });
         
@@ -199,8 +232,9 @@ class FrameStreamingClient {
             }
             
             // Callback with frame data
+            // Note: data.image already contains the full data URL with prefix
             this.onFrame({
-                image: `data:image/jpeg;base64,${data.image}`,
+                image: data.image,
                 timestamp: data.timestamp || now,
                 stats: {
                     frameNumber: this.frameCount,
@@ -232,11 +266,23 @@ class FrameStreamingClient {
          * Subscribe to frame stream for a session
          */
         if (!this.isConnected) {
+            console.warn('[Streaming] Not connected to server - cannot subscribe');
             this.onError('Not connected to server');
             return;
         }
         
+        if (this.isSubscribing) {
+            console.warn('[Streaming] Already subscribing, skipping duplicate request');
+            return;
+        }
+        
+        if (this.isStreaming && this.sessionId === sessionId) {
+            console.warn('[Streaming] Already subscribed to this session, skipping duplicate');
+            return;
+        }
+        
         this.sessionId = sessionId;
+        this.isSubscribing = true;
         console.log('[Streaming] Subscribing to session:', sessionId);
         
         this.socket.emit('subscribe', {

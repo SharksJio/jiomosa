@@ -714,6 +714,12 @@ LAUNCHER_TEMPLATE = """
                 // Wait for rendering
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 
+                // Verify session exists before redirecting
+                const verifyResponse = await fetch(`${JIOMOSA_SERVER}/api/session/${currentSessionId}/info`);
+                if (!verifyResponse.ok) {
+                    throw new Error('Session verification failed - session may have timed out');
+                }
+                
                 // Redirect to viewer
                 window.location.href = `/viewer?session=${currentSessionId}&app=${encodeURIComponent(appName)}`;
                 
@@ -943,8 +949,12 @@ VIEWER_TEMPLATE = """
     <div class="app-bar">
         <button class="back-button" onclick="goBack()" aria-label="Go back">←</button>
         <div class="app-title">{{ app_name }}</div>
+        <button class="refresh-button" onclick="toggleKeyboard()" aria-label="Toggle keyboard" id="keyboardBtn">⌨️</button>
         <button class="refresh-button" onclick="refresh()" aria-label="Refresh">↻</button>
     </div>
+    
+    <!-- Hidden input for mobile keyboard -->
+    <input type="text" id="hiddenInput" style="position: absolute; left: -9999px; top: -9999px;" />
     
     <!-- Viewer Container - Direct Framebuffer Display -->
     <div class="viewer-container">
@@ -972,11 +982,8 @@ VIEWER_TEMPLATE = """
     
     <!-- WebSocket streaming client -->
     <script>
-        // Import streaming client (will be loaded inline)
-        const STREAMING_CLIENT_CODE = `
-${STREAMING_CLIENT_JS}
-        `;
-        eval(STREAMING_CLIENT_CODE);
+        // Streaming client loaded inline
+        {{ STREAMING_CLIENT_JS | safe }}
         
         const sessionId = "{{ session_id }}";
         let streamingClient = null;
@@ -984,6 +991,8 @@ ${STREAMING_CLIENT_JS}
         let lastFpsUpdate = Date.now();
         let consecutiveErrors = 0;
         const MAX_ERRORS = 5;
+        let isSubscribed = false;
+        let isInitialized = false;
         
         const browserFrame = document.getElementById('browser-frame');
         const loadingIndicator = document.getElementById('loadingIndicator');
@@ -1000,50 +1009,83 @@ ${STREAMING_CLIENT_JS}
         
         // Initialize streaming client
         function initStreamingClient() {
-            streamingClient = new FrameStreamingClient({
-                serverUrl: window.location.origin,
-                sessionId: sessionId,
-                
-                onFrame: (frameData) => {
-                    // Update image source
-                    browserFrame.src = frameData.image;
-                    browserFrame.classList.add('loaded');
-                    
-                    // Hide loading indicator on first frame
-                    if (loadingIndicator.classList.contains('hidden') === false) {
-                        loadingIndicator.classList.add('hidden');
-                    }
-                    
-                    // Update stats
-                    const stats = frameData.stats;
-                    updateFPS(stats);
-                    
-                    // Reset error counter on success
-                    consecutiveErrors = 0;
-                },
-                
-                onError: (error) => {
-                    console.error('Streaming error:', error);
-                    consecutiveErrors++;
-                    
-                    if (consecutiveErrors >= MAX_ERRORS) {
-                        console.error('Too many errors, stopping stream');
-                        alert('Connection lost. Please go back and try again.');
-                        goBack();
-                    }
-                },
-                
-                onConnect: () => {
-                    console.log('Streaming client connected');
-                    fpsCounter.classList.add('visible');
-                },
-                
-                onDisconnect: (reason) => {
-                    console.log('Streaming client disconnected:', reason);
-                    fpsCounter.classList.remove('visible');
-                }
-            });
+            const rendererServerUrl = "{{ PUBLIC_RENDERER_URL or '' }}";
             
+            console.log('[Viewer] Initializing streaming client');
+            console.log('[Viewer] Session ID:', sessionId);
+            console.log('[Viewer] Public Renderer URL:', rendererServerUrl || 'not set');
+            console.log('[Viewer] Window origin:', window.location.origin);
+
+            // If a PUBLIC_RENDERER_URL is not available (e.g. Codespaces vars not set),
+            // fall back to using the webapp origin and proxy Socket.IO polling through
+            // `/proxy/socket.io`. This avoids websocket upgrade failures through the
+            // Codespaces port-forwarding layer by using HTTP polling proxied to the
+            // renderer service.
+            const clientOptions = { sessionId: sessionId };
+
+            if (rendererServerUrl) {
+                clientOptions.serverUrl = rendererServerUrl;
+                clientOptions.transports = ['websocket', 'polling'];
+                console.log('[Viewer] Using direct connection to renderer');
+            } else {
+                clientOptions.serverUrl = window.location.origin;
+                clientOptions.path = '/proxy/socket.io';
+                clientOptions.transports = ['polling'];
+                console.log('[Viewer] Using proxied connection via webapp');
+            }
+            
+            console.log('[Viewer] Client options:', JSON.stringify(clientOptions, null, 2));
+
+            streamingClient = new FrameStreamingClient(Object.assign({
+                    onFrame: (frameData) => {
+                        // Update image source
+                        browserFrame.src = frameData.image;
+                        browserFrame.classList.add('loaded');
+
+                        // Hide loading indicator on first frame
+                        if (loadingIndicator.classList.contains('hidden') === false) {
+                            loadingIndicator.classList.add('hidden');
+                        }
+
+                        // Update stats
+                        const stats = frameData.stats;
+                        updateFPS(stats);
+
+                        // Reset error counter on success
+                        consecutiveErrors = 0;
+                    },
+
+                    onError: (error) => {
+                        console.error('Streaming error:', error);
+                        consecutiveErrors++;
+
+                        if (consecutiveErrors >= MAX_ERRORS) {
+                            console.error('Too many errors, stopping stream');
+                            alert('Connection lost. Please go back and try again.');
+                            goBack();
+                        }
+                    },
+
+                    onConnect: () => {
+                        console.log('[Viewer] Streaming client connected');
+                        fpsCounter.classList.add('visible');
+                        // Auto-subscribe to session on connection (but only once)
+                        if (!isSubscribed) {
+                            console.log('[Viewer] Auto-subscribing to session:', sessionId);
+                            streamingClient.subscribe(sessionId);
+                            isSubscribed = true;
+                        } else {
+                            console.log('[Viewer] Already subscribed, skipping duplicate subscription');
+                        }
+                    },
+
+                    onDisconnect: (reason) => {
+                        console.log('[Viewer] Streaming client disconnected:', reason);
+                        fpsCounter.classList.remove('visible');
+                        isSubscribed = false; // Reset flag so we can resubscribe on reconnection
+                    }
+        }, clientOptions));
+
             setupInputHandlers();
         }
         
@@ -1098,6 +1140,33 @@ ${STREAMING_CLIENT_JS}
             loadingIndicator.classList.add('hidden');
         }
         
+        // Toggle keyboard (for mobile)
+        function toggleKeyboard() {
+            const hiddenInput = document.getElementById('hiddenInput');
+            const keyboardBtn = document.getElementById('keyboardBtn');
+            
+            if (document.activeElement === hiddenInput) {
+                hiddenInput.blur();
+                keyboardBtn.style.opacity = '1.0';
+            } else {
+                hiddenInput.focus();
+                keyboardBtn.style.opacity = '0.5';
+                
+                // Handle input from hidden field
+                hiddenInput.addEventListener('input', (e) => {
+                    const text = e.target.value;
+                    if (text && streamingClient) {
+                        // Send each character
+                        for (let char of text) {
+                            streamingClient.sendText(char);
+                        }
+                        // Clear input
+                        e.target.value = '';
+                    }
+                });
+            }
+        }
+        
         // Go back to launcher
         function goBack() {
             if (streamingClient) {
@@ -1119,6 +1188,10 @@ ${STREAMING_CLIENT_JS}
             touchOverlay.addEventListener('touchmove', handleTouchMove, { passive: false });
             touchOverlay.addEventListener('touchend', handleTouchEnd, { passive: false });
             touchOverlay.addEventListener('wheel', handleWheel, { passive: false });
+            
+            // Add keyboard listeners
+            document.addEventListener('keydown', handleKeyDown);
+            document.addEventListener('keypress', handleKeyPress);
         }
         
         // Calculate coordinates relative to image
@@ -1139,6 +1212,11 @@ ${STREAMING_CLIENT_JS}
             
             return { x, y };
         }
+        
+        // Make functions globally accessible for inline onclick handlers
+        window.goBack = goBack;
+        window.toggleKeyboard = toggleKeyboard;
+        window.refresh = refresh;
         
         // Handle click/tap
         function handleClick(event) {
@@ -1206,6 +1284,39 @@ ${STREAMING_CLIENT_JS}
             }
         }
         
+        // Handle keyboard input
+        function handleKeyDown(event) {
+            // Don't capture if user is typing in input fields
+            if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+                return;
+            }
+            
+            // Handle special keys (Enter, Tab, Backspace, etc.)
+            if (streamingClient && (event.key.length === 1 || 
+                ['Enter', 'Tab', 'Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key))) {
+                event.preventDefault();
+                // For special keys, send them as text
+                let textToSend = event.key;
+                if (event.key === 'Enter') textToSend = '\\n';
+                if (event.key === 'Tab') textToSend = '\\t';
+                if (event.key === 'Backspace') textToSend = '\\b';
+                
+                if (textToSend.length === 1 || textToSend === '\\n' || textToSend === '\\t' || textToSend === '\\b') {
+                    streamingClient.sendText(textToSend);
+                }
+            }
+        }
+        
+        function handleKeyPress(event) {
+            // Don't capture if user is typing in input fields
+            if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+                return;
+            }
+            
+            // Prevent default to avoid browser shortcuts
+            event.preventDefault();
+        }
+        
         // Visual feedback for clicks
         function showClickFeedback(x, y) {
             const ripple = document.createElement('div');
@@ -1241,11 +1352,34 @@ ${STREAMING_CLIENT_JS}
         document.head.appendChild(style);
         
         // Auto-start streaming on page load
-        window.addEventListener('load', () => {
-            setTimeout(() => {
-                initStreamingClient();
-                streamingClient.subscribe(sessionId);
-            }, 500);
+        window.addEventListener('load', async () => {
+            // First verify the session exists
+            try {
+                const response = await fetch(`/proxy/api/session/${sessionId}/info`);
+                if (!response.ok) {
+                    alert('Session not found. Returning to launcher...');
+                    window.location.href = '/';
+                    return;
+                }
+            } catch (error) {
+                console.error('Failed to verify session:', error);
+                alert('Failed to connect. Returning to launcher...');
+                window.location.href = '/';
+                return;
+            }
+            
+            // Session exists, start streaming
+            if (!isInitialized) {
+                console.log('[Viewer] Starting streaming client initialization');
+                isInitialized = true;
+                setTimeout(() => {
+                    initStreamingClient();
+                    // Don't subscribe immediately - wait for connection
+                    // The client will auto-subscribe on connect event
+                }, 500);
+            } else {
+                console.log('[Viewer] Already initialized, skipping duplicate initialization');
+            }
         });
         
         // Cleanup on page unload
@@ -1285,7 +1419,8 @@ def viewer():
         VIEWER_TEMPLATE,
         session_id=session_id,
         app_name=app_name,
-        STREAMING_CLIENT_JS=STREAMING_CLIENT_JS
+        STREAMING_CLIENT_JS=STREAMING_CLIENT_JS,
+        PUBLIC_RENDERER_URL=PUBLIC_RENDERER_URL
     )
 
 
@@ -1299,16 +1434,30 @@ def get_apps():
 def proxy_to_jiomosa(endpoint):
     """Proxy requests to Jiomosa renderer to avoid CORS issues"""
     try:
+        # Preserve query string when proxying (important for Socket.IO/Engine.IO)
+        query = request.query_string.decode('utf-8')
         url = f"{JIOMOSA_SERVER}/{endpoint}"
+        if query:
+            url = f"{url}?{query}"
         
+        # Log problematic requests for debugging
+        if 'ERR' in query or len(url) > 500:
+            logger.warning(f"Potentially problematic proxy URL: {url[:200]}...")
+
+        # Forward headers (preserve Content-Type for Socket.IO)
+        headers = {
+            'Content-Type': request.headers.get('Content-Type', 'application/octet-stream')
+        }
+
         if request.method == 'POST':
-            response = requests.post(url, json=request.get_json(), timeout=30)
+            # Forward raw body data (Socket.IO sends text/plain, not JSON)
+            response = requests.post(url, data=request.get_data(), headers=headers, timeout=120)
         elif request.method == 'GET':
-            response = requests.get(url, timeout=30)
+            response = requests.get(url, timeout=120)
         elif request.method == 'PUT':
-            response = requests.put(url, json=request.get_json(), timeout=30)
+            response = requests.put(url, data=request.get_data(), headers=headers, timeout=120)
         elif request.method == 'DELETE':
-            response = requests.delete(url, timeout=30)
+            response = requests.delete(url, timeout=120)
         else:
             return jsonify({'error': 'Method not allowed'}), 405
         
@@ -1317,8 +1466,12 @@ def proxy_to_jiomosa(endpoint):
         }
     
     except requests.exceptions.RequestException as e:
-        logger.error(f"Proxy error: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Proxy error for {endpoint}: {e}")
+        logger.error(f"Full URL attempted: {url if 'url' in locals() else 'URL not constructed'}")
+        return jsonify({'error': str(e), 'endpoint': endpoint}), 500
+    except Exception as e:
+        logger.error(f"Unexpected proxy error for {endpoint}: {e}")
+        return jsonify({'error': 'Internal proxy error'}), 500
 
 
 @app.route('/health')
