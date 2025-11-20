@@ -32,3 +32,8 @@ fastapi-cors==0.0.6
 pyjwt==2.8.0
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+
+# Pillow for image processing
+Pillow==10.1.0
+
+

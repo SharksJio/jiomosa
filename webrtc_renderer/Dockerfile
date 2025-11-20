@@ -1,7 +1,39 @@
-# Simplified Dockerfile for faster development
-FROM python:3.11-slim
+# Multi-stage build for optimal image size
+FROM python:3.11-bookworm as builder
 
-# Install system dependencies including ffmpeg and Playwright requirements
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    make \
+    pkg-config \
+    libavformat-dev \
+    libavcodec-dev \
+    libavdevice-dev \
+    libavutil-dev \
+    libswscale-dev \
+    libswresample-dev \
+    libavfilter-dev \
+    libvpx-dev \
+    libopus-dev \
+    libsrtp2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies in a virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+COPY requirements.txt /tmp/
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Install Playwright browsers
+RUN playwright install chromium
+
+# Production stage
+FROM python:3.11-bookworm
+
+# Install runtime dependencies and Playwright requirements
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
@@ -36,18 +68,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libx11-xcb1 \
     libxcb1 \
     libxext6 \
+    libglib2.0-0 \
+    libgtk-3-0 \
+    fonts-liberation \
+    libu2f-udev \
+    libvulkan1 \
+    xdg-utils \
+    wget \
     && rm -rf /var/lib/apt/lists/*
+
+# Copy Python environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy Playwright browsers from builder
+COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
 
 # Create app directory
 WORKDIR /app
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Install Playwright and browsers
-RUN playwright install chromium
-RUN playwright install-deps chromium
+# Copy application code
+COPY . .
 
 # Copy application code
 COPY . .
@@ -55,14 +96,16 @@ COPY . .
 # Create non-root user for security
 RUN useradd -m -u 1000 jiomosa && \
     chown -R jiomosa:jiomosa /app && \
-    mkdir -p /home/jiomosa/.cache && \
-    chown -R jiomosa:jiomosa /home/jiomosa
+    mkdir -p /home/jiomosa/.cache/ms-playwright && \
+    cp -r /root/.cache/ms-playwright/* /home/jiomosa/.cache/ms-playwright/ && \
+    chown -R jiomosa:jiomosa /home/jiomosa/.cache
 
 USER jiomosa
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
-    PLAYWRIGHT_BROWSERS_PATH=/home/jiomosa/.cache/ms-playwright
+    PLAYWRIGHT_BROWSERS_PATH=/home/jiomosa/.cache/ms-playwright \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 # Expose port
 EXPOSE 8000
