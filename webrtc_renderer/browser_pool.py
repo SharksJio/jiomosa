@@ -166,6 +166,19 @@ class BrowserPool:
             logger.error(f"Failed to type text in session {session_id}: {e}")
             raise
     
+    async def press_key(self, session_id: str, key: str):
+        """Press a specific key (supports special keys like Enter, Backspace, etc.)"""
+        page = await self.get_page(session_id)
+        if not page:
+            raise ValueError(f"Session {session_id} not found")
+        
+        try:
+            await page.keyboard.press(key)
+            self.session_timestamps[session_id] = datetime.now()
+        except Exception as e:
+            logger.error(f"Failed to press key '{key}' in session {session_id}: {e}")
+            raise
+    
     async def screenshot(self, session_id: str) -> Optional[bytes]:
         """Take a screenshot of the page"""
         page = await self.get_page(session_id)

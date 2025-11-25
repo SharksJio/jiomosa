@@ -85,15 +85,17 @@ class JiomosaWebRTCClient {
      */
     sendClick(x, y) {
         if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
-            console.warn('Data channel not ready');
+            console.warn('Data channel not ready, state:', this.dataChannel?.readyState);
             return;
         }
         
-        this.dataChannel.send(JSON.stringify({
+        const message = JSON.stringify({
             type: 'click',
             x: Math.round(x),
             y: Math.round(y)
-        }));
+        });
+        console.log('Sending click:', message);
+        this.dataChannel.send(message);
     }
     
     /**
@@ -101,14 +103,16 @@ class JiomosaWebRTCClient {
      */
     sendScroll(deltaY) {
         if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
-            console.warn('Data channel not ready');
+            console.warn('Data channel not ready, state:', this.dataChannel?.readyState);
             return;
         }
         
-        this.dataChannel.send(JSON.stringify({
+        const message = JSON.stringify({
             type: 'scroll',
             deltaY: Math.round(deltaY)
-        }));
+        });
+        console.log('Sending scroll:', message);
+        this.dataChannel.send(message);
     }
     
     /**
@@ -116,14 +120,33 @@ class JiomosaWebRTCClient {
      */
     sendText(text) {
         if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
-            console.warn('Data channel not ready');
+            console.warn('Data channel not ready, state:', this.dataChannel?.readyState);
             return;
         }
         
-        this.dataChannel.send(JSON.stringify({
+        const message = JSON.stringify({
             type: 'text',
             text: text
-        }));
+        });
+        console.log('Sending text:', message);
+        this.dataChannel.send(message);
+    }
+    
+    /**
+     * Send key press to the server
+     */
+    sendKey(key) {
+        if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
+            console.warn('Data channel not ready, state:', this.dataChannel?.readyState);
+            return;
+        }
+        
+        const message = JSON.stringify({
+            type: 'key',
+            key: key
+        });
+        console.log('Sending key:', message);
+        this.dataChannel.send(message);
     }
     
     /**
@@ -229,7 +252,7 @@ class JiomosaWebRTCClient {
         
         // Handle data channel
         this.pc.ondatachannel = (event) => {
-            console.log('Data channel received');
+            console.log('Data channel received:', event.channel.label, 'readyState:', event.channel.readyState);
             this._setupDataChannel(event.channel);
         };
     }
@@ -238,7 +261,8 @@ class JiomosaWebRTCClient {
         this.dataChannel = channel;
         
         this.dataChannel.onopen = () => {
-            console.log('Data channel opened');
+            console.log('Data channel opened - ready for input events');
+            this._updateStatus('ready', 'Ready - Interactive');
         };
         
         this.dataChannel.onclose = () => {
@@ -247,6 +271,10 @@ class JiomosaWebRTCClient {
         
         this.dataChannel.onerror = (error) => {
             console.error('Data channel error:', error);
+        };
+        
+        this.dataChannel.onmessage = (event) => {
+            console.log('Data channel message received:', event.data);
         };
     }
     

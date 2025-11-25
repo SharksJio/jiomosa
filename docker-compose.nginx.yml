@@ -1,0 +1,21 @@
+# Nginx reverse proxy for public access with SSL
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: jiomosa-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - webrtc-renderer
+      - webrtc-webapp
+    networks:
+      - jiomosa-webrtc-network
+
+networks:
+  jiomosa-webrtc-network:
+    external: true

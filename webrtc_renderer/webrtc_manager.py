@@ -58,12 +58,21 @@ class WebRTCPeer:
         
         @self.pc.on("datachannel")
         def on_datachannel(channel):
-            logger.info(f"Data channel established: {channel.label}")
+            logger.info(f"Data channel established: {channel.label}, readyState: {channel.readyState}")
             self.data_channel = channel
             
             @channel.on("message")
             def on_message(message):
+                logger.info(f"Received data channel message: {message}")
                 asyncio.create_task(self._handle_data_channel_message(message))
+            
+            @channel.on("open")
+            def on_open():
+                logger.info(f"Data channel opened: {channel.label}")
+            
+            @channel.on("close")
+            def on_close():
+                logger.info(f"Data channel closed: {channel.label}")
         
         logger.info(f"WebRTC peer connection created for {self.peer_id}")
     
@@ -86,7 +95,12 @@ class WebRTCPeer:
             elif event_type == 'text':
                 text = data.get('text', '')
                 await browser_pool.type_text(self.session_id, text)
-                logger.info(f"Typed text in session {self.session_id}")
+                logger.info(f"Typed text '{text}' in session {self.session_id}")
+                
+            elif event_type == 'key':
+                key = data.get('key', '')
+                await browser_pool.press_key(self.session_id, key)
+                logger.info(f"Pressed key '{key}' in session {self.session_id}")
                 
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in data channel message: {e}")
@@ -107,7 +121,21 @@ class WebRTCPeer:
             
             # Create data channel for input events
             self.data_channel = self.pc.createDataChannel("input")
-            logger.info(f"Created data channel for input events")
+            logger.info(f"Created data channel for input events, id: {id(self.data_channel)}, readyState: {self.data_channel.readyState}")
+            
+            # Set up handlers for the data channel we created
+            @self.data_channel.on("open")
+            def on_open():
+                logger.info(f"Data channel opened (server-created)")
+            
+            @self.data_channel.on("close") 
+            def on_close():
+                logger.info(f"Data channel closed (server-created)")
+            
+            @self.data_channel.on("message")
+            def on_message(message):
+                logger.info(f"Received message on server-created channel: {message}")
+                asyncio.create_task(self._handle_data_channel_message(message))
             
             # Create offer
             offer = await self.pc.createOffer()

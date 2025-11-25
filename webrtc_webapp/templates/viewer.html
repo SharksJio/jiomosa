@@ -344,6 +344,9 @@
                 const y = (e.clientY - rect.top) * scaleY;
                 
                 client.sendClick(x, y);
+                
+                // Focus video for keyboard input
+                video.focus();
             });
             
             // Touch events for mobile
@@ -377,6 +380,55 @@
             
             video.addEventListener('touchstart', (e) => {
                 touchStartY = e.touches[0].clientY;
+            });
+            
+            // Keyboard support
+            // Make video focusable
+            video.setAttribute('tabindex', '0');
+            video.focus();
+            
+            // Handle keyboard input
+            document.addEventListener('keydown', (e) => {
+                // Don't interfere with browser shortcuts unless we're focused on the video area
+                if (document.activeElement === video || e.target === document.body) {
+                    e.preventDefault();
+                    
+                    // Map special keys
+                    const specialKeys = {
+                        'Enter': 'Enter',
+                        'Backspace': 'Backspace',
+                        'Delete': 'Delete',
+                        'Tab': 'Tab',
+                        'Escape': 'Escape',
+                        'ArrowUp': 'ArrowUp',
+                        'ArrowDown': 'ArrowDown',
+                        'ArrowLeft': 'ArrowLeft',
+                        'ArrowRight': 'ArrowRight',
+                        'Home': 'Home',
+                        'End': 'End',
+                        'PageUp': 'PageUp',
+                        'PageDown': 'PageDown',
+                        ' ': 'Space'
+                    };
+                    
+                    if (specialKeys[e.key]) {
+                        // Send special key
+                        client.sendKey(specialKeys[e.key]);
+                    } else if (e.key.length === 1) {
+                        // Regular character - send as text
+                        client.sendText(e.key);
+                    } else {
+                        // Try to send the key as-is
+                        client.sendKey(e.key);
+                    }
+                    
+                    console.log('Key pressed:', e.key, 'Code:', e.code);
+                }
+            });
+            
+            // Auto-focus video when container is clicked
+            document.getElementById('video-container').addEventListener('click', () => {
+                video.focus();
             });
         }
         
