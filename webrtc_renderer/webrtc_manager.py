@@ -9,6 +9,7 @@ from typing import Dict, Optional
 from datetime import datetime
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, RTCConfiguration, RTCIceServer
 from aiortc.contrib.media import MediaBlackhole
+from aiortc.sdp import candidate_from_sdp
 from video_track import BrowserVideoTrack
 from browser_pool import browser_pool
 from config import settings
@@ -136,11 +137,16 @@ class WebRTCPeer:
     async def add_ice_candidate(self, candidate: dict):
         """Add ICE candidate"""
         try:
-            ice_candidate = RTCIceCandidate(
-                candidate=candidate.get("candidate"),
-                sdpMid=candidate.get("sdpMid"),
-                sdpMLineIndex=candidate.get("sdpMLineIndex")
-            )
+            # Parse the candidate SDP string into an RTCIceCandidate object
+            candidate_sdp = candidate.get("candidate")
+            if not candidate_sdp:
+                logger.warning(f"Empty candidate received for peer {self.peer_id}")
+                return
+                
+            ice_candidate = candidate_from_sdp(candidate_sdp)
+            ice_candidate.sdpMid = candidate.get("sdpMid")
+            ice_candidate.sdpMLineIndex = candidate.get("sdpMLineIndex")
+            
             await self.pc.addIceCandidate(ice_candidate)
             logger.info(f"Added ICE candidate for peer {self.peer_id}")
         except Exception as e:

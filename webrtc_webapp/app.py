@@ -2,11 +2,15 @@
 Jiomosa WebRTC WebApp
 Modern Progressive Web App for Android with Material Design
 """
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import os
+import httpx
+import websockets
+import asyncio
+import json
 
 app = FastAPI(title="Jiomosa WebApp")
 
@@ -144,6 +148,167 @@ async def viewer(request: Request, url: str):
 async def health():
     """Health check"""
     return {"status": "healthy"}
+
+
+# API Proxy endpoints - Forward requests from browser to webrtc-renderer
+@app.post("/api/session/create")
+async def proxy_create_session(request: Request):
+    """Proxy session create to webrtc-renderer"""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            body = await request.body()
+            resp = await client.post(
+                f"{WEBRTC_SERVER}/api/session/create",
+                content=body,
+                headers={"Content-Type": "application/json"}
+            )
+            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except httpx.ConnectError:
+        return JSONResponse(
+            content={"success": False, "error": "Cannot connect to webrtc-renderer service"},
+            status_code=503
+        )
+    except httpx.TimeoutException:
+        return JSONResponse(
+            content={"success": False, "error": "Request to webrtc-renderer timed out"},
+            status_code=504
+        )
+    except httpx.HTTPError as e:
+        return JSONResponse(
+            content={"success": False, "error": f"HTTP error: {str(e)}"},
+            status_code=502
+        )
+
+
+@app.post("/api/session/{session_id}/load")
+async def proxy_load_url(session_id: str, request: Request):
+    """Proxy URL load to webrtc-renderer"""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            body = await request.body()
+            resp = await client.post(
+                f"{WEBRTC_SERVER}/api/session/{session_id}/load",
+                content=body,
+                headers={"Content-Type": "application/json"}
+            )
+            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except httpx.ConnectError:
+        return JSONResponse(
+            content={"success": False, "error": "Cannot connect to webrtc-renderer service"},
+            status_code=503
+        )
+    except httpx.TimeoutException:
+        return JSONResponse(
+            content={"success": False, "error": "Request to webrtc-renderer timed out"},
+            status_code=504
+        )
+    except httpx.HTTPError as e:
+        return JSONResponse(
+            content={"success": False, "error": f"HTTP error: {str(e)}"},
+            status_code=502
+        )
+
+
+@app.delete("/api/session/{session_id}")
+async def proxy_close_session(session_id: str):
+    """Proxy session close to webrtc-renderer"""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.delete(f"{WEBRTC_SERVER}/api/session/{session_id}")
+            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except httpx.ConnectError:
+        return JSONResponse(
+            content={"success": False, "error": "Cannot connect to webrtc-renderer service"},
+            status_code=503
+        )
+    except httpx.TimeoutException:
+        return JSONResponse(
+            content={"success": False, "error": "Request to webrtc-renderer timed out"},
+            status_code=504
+        )
+    except httpx.HTTPError as e:
+        return JSONResponse(
+            content={"success": False, "error": f"HTTP error: {str(e)}"},
+            status_code=502
+        )
+
+
+@app.get("/api/sessions")
+async def proxy_list_sessions():
+    """Proxy sessions list to webrtc-renderer"""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(f"{WEBRTC_SERVER}/api/sessions")
+            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except httpx.ConnectError:
+        return JSONResponse(
+            content={"success": False, "error": "Cannot connect to webrtc-renderer service"},
+            status_code=503
+        )
+    except httpx.TimeoutException:
+        return JSONResponse(
+            content={"success": False, "error": "Request to webrtc-renderer timed out"},
+            status_code=504
+        )
+    except httpx.HTTPError as e:
+        return JSONResponse(
+            content={"success": False, "error": f"HTTP error: {str(e)}"},
+            status_code=502
+        )
+
+
+# WebSocket proxy for signaling
+@app.websocket("/ws/signaling")
+async def websocket_signaling_proxy(websocket: WebSocket):
+    """Proxy WebSocket signaling to webrtc-renderer"""
+    await websocket.accept()
+    
+    # Convert http to ws for the backend URL
+    ws_url = WEBRTC_SERVER.replace("http://", "ws://").replace("https://", "wss://") + "/ws/signaling"
+    
+    try:
+        async with websockets.connect(ws_url) as backend_ws:
+            async def forward_to_backend():
+                try:
+                    while True:
+                        data = await websocket.receive_text()
+                        await backend_ws.send(data)
+                except WebSocketDisconnect:
+                    pass
+            
+            async def forward_to_client():
+                try:
+                    async for message in backend_ws:
+                        await websocket.send_text(message)
+                except websockets.exceptions.ConnectionClosed:
+                    pass
+            
+            # Run both directions concurrently
+            await asyncio.gather(
+                forward_to_backend(),
+                forward_to_client(),
+                return_exceptions=True
+            )
+    except websockets.exceptions.InvalidURI as e:
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": f"Invalid backend URL: {str(e)}"}))
+        except Exception:
+            pass
+    except websockets.exceptions.WebSocketException as e:
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": f"WebSocket error: {str(e)}"}))
+        except Exception:
+            pass
+    except OSError as e:
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": f"Connection error: {str(e)}"}))
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
