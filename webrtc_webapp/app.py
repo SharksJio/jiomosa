@@ -2,11 +2,15 @@
 Jiomosa WebRTC WebApp
 Modern Progressive Web App for Android with Material Design
 """
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import os
+import httpx
+import websockets
+import asyncio
+import json
 
 app = FastAPI(title="Jiomosa WebApp")
 
@@ -144,6 +148,93 @@ async def viewer(request: Request, url: str):
 async def health():
     """Health check"""
     return {"status": "healthy"}
+
+
+# API Proxy endpoints - Forward requests from browser to webrtc-renderer
+@app.post("/api/session/create")
+async def proxy_create_session(request: Request):
+    """Proxy session create to webrtc-renderer"""
+    async with httpx.AsyncClient() as client:
+        body = await request.body()
+        resp = await client.post(
+            f"{WEBRTC_SERVER}/api/session/create",
+            content=body,
+            headers={"Content-Type": "application/json"}
+        )
+        return JSONResponse(content=resp.json(), status_code=resp.status_code)
+
+
+@app.post("/api/session/{session_id}/load")
+async def proxy_load_url(session_id: str, request: Request):
+    """Proxy URL load to webrtc-renderer"""
+    async with httpx.AsyncClient() as client:
+        body = await request.body()
+        resp = await client.post(
+            f"{WEBRTC_SERVER}/api/session/{session_id}/load",
+            content=body,
+            headers={"Content-Type": "application/json"}
+        )
+        return JSONResponse(content=resp.json(), status_code=resp.status_code)
+
+
+@app.delete("/api/session/{session_id}")
+async def proxy_close_session(session_id: str):
+    """Proxy session close to webrtc-renderer"""
+    async with httpx.AsyncClient() as client:
+        resp = await client.delete(f"{WEBRTC_SERVER}/api/session/{session_id}")
+        return JSONResponse(content=resp.json(), status_code=resp.status_code)
+
+
+@app.get("/api/sessions")
+async def proxy_list_sessions():
+    """Proxy sessions list to webrtc-renderer"""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{WEBRTC_SERVER}/api/sessions")
+        return JSONResponse(content=resp.json(), status_code=resp.status_code)
+
+
+# WebSocket proxy for signaling
+@app.websocket("/ws/signaling")
+async def websocket_signaling_proxy(websocket: WebSocket):
+    """Proxy WebSocket signaling to webrtc-renderer"""
+    await websocket.accept()
+    
+    # Convert http to ws for the backend URL
+    ws_url = WEBRTC_SERVER.replace("http://", "ws://").replace("https://", "wss://") + "/ws/signaling"
+    
+    try:
+        async with websockets.connect(ws_url) as backend_ws:
+            async def forward_to_backend():
+                try:
+                    while True:
+                        data = await websocket.receive_text()
+                        await backend_ws.send(data)
+                except WebSocketDisconnect:
+                    pass
+            
+            async def forward_to_client():
+                try:
+                    async for message in backend_ws:
+                        await websocket.send_text(message)
+                except websockets.exceptions.ConnectionClosed:
+                    pass
+            
+            # Run both directions concurrently
+            await asyncio.gather(
+                forward_to_backend(),
+                forward_to_client(),
+                return_exceptions=True
+            )
+    except Exception as e:
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(e)}))
+        except:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except:
+            pass
 
 
 if __name__ == "__main__":

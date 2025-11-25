@@ -144,7 +144,14 @@ class JiomosaWebRTCClient {
     
     _connectWebSocket() {
         return new Promise((resolve, reject) => {
-            const wsUrl = this.serverUrl.replace('http', 'ws') + '/ws/signaling';
+            let wsUrl;
+            if (this.serverUrl === '' || this.serverUrl === '/') {
+                // Use relative WebSocket URL based on current page location
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                wsUrl = `${protocol}//${window.location.host}/ws/signaling`;
+            } else {
+                wsUrl = this.serverUrl.replace('http', 'ws') + '/ws/signaling';
+            }
             console.log('Connecting to WebSocket:', wsUrl);
             
             this.ws = new WebSocket(wsUrl);
