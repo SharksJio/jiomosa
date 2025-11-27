@@ -88,9 +88,9 @@ Copy the Java files to your project's source directory and the layout file to yo
 ### 4. Usage
 
 ```java
-// Start the Stealth WebView Activity
+// Start the Stealth WebView Activity - loads actual Outlook Mail URL
 Intent intent = new Intent(this, StealthWebViewActivity.class);
-intent.putExtra("url", "https://outlook.live.com");
+intent.putExtra("url", "https://outlook.office.com/mail");
 startActivity(intent);
 ```
 
@@ -142,7 +142,7 @@ startActivity(intent);
 
 Test your implementation with these detection tools:
 
-1. **Outlook**: https://outlook.live.com (Primary target)
+1. **Outlook Mail**: https://outlook.office.com/mail (Primary target)
 2. **Bot Detection Test**: https://bot.sannysoft.com
 3. **CreepJS**: https://abrahamjuliot.github.io/creepjs/
 4. **Browser Leaks**: https://browserleaks.com

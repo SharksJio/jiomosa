@@ -28,7 +28,7 @@ import androidx.appcompat.app.AppCompatActivity
  *
  * Usage:
  *   startActivity(Intent(this, StealthWebViewActivity::class.java).apply {
- *       putExtra("url", "https://outlook.live.com")
+ *       putExtra("url", "https://outlook.office.com/mail")
  *   })
  */
 class StealthWebViewActivity : AppCompatActivity() {
@@ -36,8 +36,8 @@ class StealthWebViewActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "StealthWebView"
         
-        // Default URL if none provided
-        private const val DEFAULT_URL = "https://outlook.live.com"
+        // Default URL if none provided - loads actual Outlook Mail directly
+        private const val DEFAULT_URL = "https://outlook.office.com/mail"
         
         // Stealth User-Agent matching desktop Chrome
         // Same as server-side Playwright stealth configuration
