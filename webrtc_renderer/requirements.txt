@@ -9,6 +9,7 @@ av==11.0.0
 
 # Browser automation (Playwright - lighter than Selenium)
 playwright==1.41.0
+playwright-stealth==1.0.5
 
 # WebSocket for signaling
 websockets==12.0

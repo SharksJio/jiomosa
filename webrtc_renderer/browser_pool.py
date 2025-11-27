@@ -7,6 +7,7 @@ import logging
 from typing import Optional, Dict
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
+from playwright_stealth import stealth_async
 from config import settings
 import base64
 
@@ -37,7 +38,11 @@ class BrowserPool:
                     '--no-sandbox',
                     '--disable-dev-shm-usage',
                     '--disable-extensions',
-                    '--remote-debugging-port=9222',  # Enable CDP
+                    '--remote-debugging-port=9222',
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-infobars',
+                    '--window-size=1920,1080',
+                    '--start-maximized',
                     '--disable-background-networking',
                     '--disable-background-timer-throttling',
                     '--disable-backgrounding-occluded-windows',
@@ -46,15 +51,27 @@ class BrowserPool:
                     '--disable-ipc-flooding-protection',
                     '--disable-popup-blocking',
                     '--disable-prompt-on-repost',
+                    '--disable-sync',
                     '--metrics-recording-only',
                     '--no-first-run',
                     '--password-store=basic',
                     '--use-mock-keychain',
                     '--force-color-profile=srgb',
-                    # Performance optimizations
-                    '--disable-blink-features=AutomationControlled',
-                    '--disable-web-security',  # For CORS during development
-                ]
+                    '--hide-scrollbars',
+                    '--mute-audio',
+                    # DRM/Protected Content Support
+                    '--enable-features=NetworkService,NetworkServiceInProcess',
+                    '--disable-features=IsolateOrigins,site-per-process,TranslateUI',
+                    # Additional stealth
+                    '--disable-default-apps',
+                    '--disable-component-extensions-with-background-pages',
+                    '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                ],
+                chromium_sandbox=False,
+                ignore_default_args=['--enable-automation'],
+                env={
+                    'TZ': 'America/New_York'
+                }
             )
             logger.info("Browser initialized successfully")
         except Exception as e:
@@ -82,9 +99,9 @@ class BrowserPool:
                 context = await self.browser.new_context(
                     viewport={'width': viewport_width, 'height': viewport_height},
                     device_scale_factor=1.0,
-                    has_touch=True,
-                    is_mobile=True,
-                    user_agent='Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                    has_touch=False,
+                    is_mobile=False,
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     locale='en-US',
                     timezone_id='America/New_York',
                     geolocation={'latitude': 40.7128, 'longitude': -74.0060},
@@ -96,12 +113,183 @@ class BrowserPool:
                 # Create a new page in the context
                 page = await context.new_page()
                 
+                # Apply playwright-stealth for comprehensive evasion
+                await stealth_async(page)
+                
                 # Set default timeouts
                 page.set_default_timeout(30000)  # 30 seconds
                 page.set_default_navigation_timeout(30000)
                 
-                # Enable CDP session for fast screenshots
+                # Log console messages and errors for debugging
+                page.on("console", lambda msg: logger.warning(f"Console {msg.type}: {msg.text}") if msg.type in ['error', 'warning'] else None)
+                page.on("pageerror", lambda exc: logger.error(f"Page error: {exc}"))
+                
+                # Enable CDP session for fast screenshots and stealth
                 cdp_session = await context.new_cdp_session(page)
+                
+                # Use CDP for additional evasions (playwright-stealth handles most)
+                await cdp_session.send('Page.addScriptToEvaluateOnNewDocument', {
+                    'source': '''
+                        // Override navigator.webdriver at multiple levels
+                        Object.defineProperty(Object.getPrototypeOf(navigator), 'webdriver', {
+                            get: () => undefined,
+                            configurable: true
+                        });
+                        delete navigator.__proto__.webdriver;
+                        
+                        // Add complete chrome object with proper structure
+                        if (!window.chrome) {
+                            Object.defineProperty(window, 'chrome', {
+                                writable: true,
+                                enumerable: true,
+                                configurable: false,
+                                value: {
+                                    app: {
+                                        isInstalled: false,
+                                        InstallState: {
+                                            DISABLED: 'disabled',
+                                            INSTALLED: 'installed',
+                                            NOT_INSTALLED: 'not_installed'
+                                        },
+                                        RunningState: {
+                                            CANNOT_RUN: 'cannot_run',
+                                            READY_TO_RUN: 'ready_to_run',
+                                            RUNNING: 'running'
+                                        }
+                                    },
+                                    runtime: {
+                                        OnInstalledReason: {
+                                            CHROME_UPDATE: 'chrome_update',
+                                            INSTALL: 'install',
+                                            SHARED_MODULE_UPDATE: 'shared_module_update',
+                                            UPDATE: 'update'
+                                        },
+                                        OnRestartRequiredReason: {
+                                            APP_UPDATE: 'app_update',
+                                            OS_UPDATE: 'os_update',
+                                            PERIODIC: 'periodic'
+                                        },
+                                        PlatformArch: {
+                                            ARM: 'arm',
+                                            ARM64: 'arm64',
+                                            X86_32: 'x86-32',
+                                            X86_64: 'x86-64'
+                                        },
+                                        PlatformOs: {
+                                            ANDROID: 'android',
+                                            CROS: 'cros',
+                                            LINUX: 'linux',
+                                            MAC: 'mac',
+                                            WIN: 'win'
+                                        }
+                                    },
+                                    loadTimes: function() {},
+                                    csi: function() {},
+                                    webstore: {}
+                                }
+                            });
+                        }
+                        
+                        // Create complete plugin objects with MimeTypes
+                        const createMimeType = (type, suffixes, description) => ({
+                            type: type,
+                            suffixes: suffixes,
+                            description: description,
+                            enabledPlugin: null
+                        });
+                        
+                        const pdfPlugin = {
+                            name: 'Chrome PDF Plugin',
+                            filename: 'internal-pdf-viewer',
+                            description: 'Portable Document Format',
+                            length: 2,
+                            0: createMimeType('application/x-google-chrome-pdf', 'pdf', 'Portable Document Format'),
+                            1: createMimeType('application/pdf', 'pdf', 'Portable Document Format')
+                        };
+                        
+                        const pdfViewerPlugin = {
+                            name: 'Chrome PDF Viewer',
+                            filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai',
+                            description: '',
+                            length: 1,
+                            0: createMimeType('application/pdf', 'pdf', '')
+                        };
+                        
+                        const naclPlugin = {
+                            name: 'Native Client',
+                            filename: 'internal-nacl-plugin',
+                            description: '',
+                            length: 2,
+                            0: createMimeType('application/x-nacl', '', 'Native Client Executable'),
+                            1: createMimeType('application/x-pnacl', '', 'Portable Native Client Executable')
+                        };
+                        
+                        // Set plugin references
+                        pdfPlugin[0].enabledPlugin = pdfPlugin;
+                        pdfPlugin[1].enabledPlugin = pdfPlugin;
+                        pdfViewerPlugin[0].enabledPlugin = pdfViewerPlugin;
+                        naclPlugin[0].enabledPlugin = naclPlugin;
+                        naclPlugin[1].enabledPlugin = naclPlugin;
+                        
+                        // Create proper PluginArray
+                        const pluginArray = [pdfPlugin, pdfViewerPlugin, naclPlugin];
+                        pluginArray.item = function(index) { return this[index] || null; };
+                        pluginArray.namedItem = function(name) { return this.find(p => p.name === name) || null; };
+                        pluginArray.refresh = function() {};
+                        
+                        Object.defineProperty(navigator, 'plugins', {
+                            get: () => pluginArray,
+                            enumerable: true,
+                            configurable: true
+                        });
+                        
+                        // Create proper MimeTypeArray
+                        const mimeTypeArray = [
+                            pdfPlugin[0], pdfPlugin[1],
+                            pdfViewerPlugin[0],
+                            naclPlugin[0], naclPlugin[1]
+                        ];
+                        mimeTypeArray.item = function(index) { return this[index] || null; };
+                        mimeTypeArray.namedItem = function(name) { return this.find(m => m.type === name) || null; };
+                        
+                        Object.defineProperty(navigator, 'mimeTypes', {
+                            get: () => mimeTypeArray,
+                            enumerable: true,
+                            configurable: true
+                        });
+                        
+                        // Override WebGL parameters for both contexts
+                        const overrideWebGL = (context) => {
+                            const getParameter = context.prototype.getParameter;
+                            context.prototype.getParameter = function(parameter) {
+                                if (parameter === 37445) return 'Google Inc. (Google)';
+                                if (parameter === 37446) return 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)';
+                                return getParameter.call(this, parameter);
+                            };
+                        };
+                        
+                        overrideWebGL(WebGLRenderingContext);
+                        if (typeof WebGL2RenderingContext !== 'undefined') {
+                            overrideWebGL(WebGL2RenderingContext);
+                        }
+                        
+                        // Override permissions
+                        const originalQuery = navigator.permissions.query;
+                        navigator.permissions.query = function(parameters) {
+                            if (parameters.name === 'notifications') {
+                                return Promise.resolve({ state: 'prompt' });
+                            }
+                            return originalQuery.apply(this, arguments);
+                        };
+                        
+                        // Set proper languages
+                        Object.defineProperty(navigator, 'languages', {
+                            get: () => ['en-US', 'en'],
+                            enumerable: true,
+                            configurable: true
+                        });
+                    '''
+                })
                 
                 # Store references including CDP session
                 self.contexts[session_id] = context

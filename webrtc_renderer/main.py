@@ -1,6 +1,6 @@
 """
 Jiomosa WebRTC Renderer - Main Application
-Production-quality WebRTC streaming server for Android devices
+Production-quality WebRTC streaming server for desktop browsers
 """
 import asyncio
 import logging
@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="Production-quality WebRTC streaming server for rendering websites on low-end Android devices",
+    description="Production-quality WebRTC streaming server for rendering desktop websites",
     lifespan=lifespan
 )
 

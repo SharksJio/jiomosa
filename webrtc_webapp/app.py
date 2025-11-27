@@ -31,7 +31,7 @@ WEBSITE_APPS = [
     {
         'id': 'youtube',
         'name': 'YouTube',
-        'url': 'https://m.youtube.com',
+        'url': 'https://www.youtube.com',
         'icon': '▶️',
         'color': '#FF0000',
         'category': 'media'
@@ -39,7 +39,7 @@ WEBSITE_APPS = [
     {
         'id': 'facebook',
         'name': 'Facebook',
-        'url': 'https://m.facebook.com',
+        'url': 'https://www.facebook.com',
         'icon': '📘',
         'color': '#1877F2',
         'category': 'social'
@@ -47,7 +47,7 @@ WEBSITE_APPS = [
     {
         'id': 'twitter',
         'name': 'X',
-        'url': 'https://mobile.twitter.com',
+        'url': 'https://twitter.com',
         'icon': '𝕏',
         'color': '#000000',
         'category': 'social'
