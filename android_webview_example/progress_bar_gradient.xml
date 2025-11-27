@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    progress_bar_gradient.xml - Progress bar drawable
+    
+    This file should be placed in res/drawable/progress_bar_gradient.xml
+    
+    Provides a gradient progress bar that matches the Jiomosa theme.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    
+    <!-- Background -->
+    <item android:id="@android:id/background">
+        <shape>
+            <solid android:color="#33FFFFFF" />
+        </shape>
+    </item>
+    
+    <!-- Progress -->
+    <item android:id="@android:id/progress">
+        <clip>
+            <shape>
+                <gradient
+                    android:startColor="#667EEA"
+                    android:endColor="#764BA2"
+                    android:angle="0" />
+            </shape>
+        </clip>
+    </item>
+    
+</layer-list>

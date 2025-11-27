@@ -129,6 +129,12 @@ docker compose up -d
 - **device_simulator/** - Testing tools
 - **tests/** - Integration tests
 
+### Android Native Integration
+- **android_webview_example/** - Native Android WebView with stealth parameters
+  - Java and Kotlin implementations
+  - Bot detection evasion for Outlook and other protected sites
+  - Complete project setup with layouts and manifests
+
 ---
 
 ## 🏗️ Architecture
@@ -167,6 +173,9 @@ Client Device (512MB RAM)
 - ⚡ [Quick Start](QUICKSTART.md) - Getting started
 - 📝 [Usage](USAGE.md) - API and usage
 - 💻 [Codespaces](CODESPACES.md) - GitHub Codespaces
+
+### Android Native Integration
+- 📱 [Android WebView Example](android_webview_example/README.md) - Native stealth WebView
 
 ### General
 - 📊 [Comparison](COMPARISON.md) - Which solution to choose
