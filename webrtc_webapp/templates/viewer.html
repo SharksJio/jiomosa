@@ -249,6 +249,26 @@
         <div id="video-container">
             <video id="remoteVideo" autoplay playsinline></video>
             
+            <!-- Mobile keyboard input - invisible overlay -->
+            <input type="text" 
+                   id="mobile-input" 
+                   inputmode="text"
+                   style="position: absolute; 
+                          bottom: 0; 
+                          left: 0; 
+                          width: 1px; 
+                          height: 1px; 
+                          opacity: 0.01; 
+                          border: none; 
+                          background: transparent;
+                          color: transparent;
+                          font-size: 16px;
+                          z-index: -1;"
+                   autocomplete="off" 
+                   autocorrect="off" 
+                   autocapitalize="off" 
+                   spellcheck="false">
+            
             <div id="loading">
                 <div class="spinner"></div>
                 <p>Initializing browser session...</p>
@@ -256,6 +276,9 @@
         </div>
         
         <div id="controls">
+            <button class="control-btn" onclick="toggleKeyboard()" title="Keyboard">
+                <span class="material-icons">keyboard</span>
+            </button>
             <button class="control-btn" onclick="refreshPage()" title="Refresh">
                 <span class="material-icons">refresh</span>
             </button>
@@ -275,22 +298,103 @@
         
         let client = null;
         let sessionId = null;
+        let currentViewport = null;
+        
+        // Detect optimal viewport size based on window
+        function getOptimalViewport() {
+            const width = window.innerWidth;
+            const height = window.innerHeight - 60; // Subtract toolbar height
+            
+            // Round to nearest 10 for better performance and caching
+            const optimalWidth = Math.floor(width / 10) * 10;
+            const optimalHeight = Math.floor(height / 10) * 10;
+            
+            // Clamp to reasonable limits (min 360x640, max 1920x2400)
+            const clampedWidth = Math.max(360, Math.min(1920, optimalWidth));
+            const clampedHeight = Math.max(640, Math.min(2400, optimalHeight));
+            
+            console.log(`📐 Viewport: ${width}x${height} → Optimal: ${clampedWidth}x${clampedHeight}`);
+            
+            return {
+                width: clampedWidth,
+                height: clampedHeight
+            };
+        }
+        
+        // Detect if device can handle higher frame rates
+        function getOptimalFrameRate() {
+            // Check network connection quality
+            const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            const hasGoodConnection = !connection || 
+                connection.effectiveType === '4g' || 
+                (connection.downlink && connection.downlink > 5);
+            
+            // Check device performance characteristics
+            const hasHighRefreshRate = window.screen.refreshRate > 60;
+            const isHighEnd = navigator.hardwareConcurrency >= 4;
+            const hasGoodMemory = navigator.deviceMemory >= 4;
+            
+            // Determine optimal FPS
+            let targetFps = 30; // Default
+            
+            if (hasGoodConnection && (isHighEnd || hasGoodMemory || hasHighRefreshRate)) {
+                targetFps = 60; // High-end devices with good connection
+                console.log('🚀 High-performance device detected: Using 60 FPS');
+            } else if (hasGoodConnection && navigator.hardwareConcurrency >= 2) {
+                targetFps = 45; // Mid-range devices
+                console.log('⚡ Mid-range device detected: Using 45 FPS');
+            } else {
+                console.log('📱 Standard device detected: Using 30 FPS');
+            }
+            
+            console.log(`Device info: Cores=${navigator.hardwareConcurrency}, Memory=${navigator.deviceMemory}GB, Connection=${connection?.effectiveType || 'unknown'}`);
+            
+            return targetFps;
+        }
+        
+        // Debounce function for resize events
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
         
         // Initialize
         async function init() {
             try {
-                // Create session
-                updateStatus('connecting', 'Creating session...');
+                // Get optimal settings for this device
+                const viewport = getOptimalViewport();
+                currentViewport = viewport;
+                const targetFps = getOptimalFrameRate();
+                
+                console.log('📊 Optimization Settings:');
+                console.log('  - Resolution:', `${viewport.width}x${viewport.height}`);
+                console.log('  - Target FPS:', targetFps);
+                console.log('  - Screen:', `${window.screen.width}x${window.screen.height}`);
+                console.log('  - Window:', `${window.innerWidth}x${window.innerHeight}`);
+                
+                // Create session with optimal viewport
+                updateStatus('connecting', `Creating optimized session (${viewport.width}x${viewport.height}@${targetFps}fps)...`);
                 const response = await fetch(`${WEBRTC_SERVER}/api/session/create`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({})
+                    body: JSON.stringify({
+                        width: viewport.width,
+                        height: viewport.height
+                    })
                 });
                 
                 const data = await response.json();
                 sessionId = data.session_id;
                 
-                console.log('Session created:', sessionId);
+                console.log('✅ Session created:', sessionId);
+                console.log('✅ Server viewport:', data.viewport);
                 
                 // Load URL
                 updateStatus('connecting', 'Loading website...');
@@ -326,27 +430,193 @@
                 // Setup input handlers
                 setupInputHandlers();
                 
+                // Handle window resize
+                window.addEventListener('resize', debounce(handleWindowResize, 1000));
+                
+                // Show optimization info
+                console.log('🎮 WebRTC streaming started with optimizations');
+                console.log('💡 Tip: Resize window to see adaptive resolution');
+                
             } catch (error) {
                 console.error('Initialization error:', error);
                 showError('Failed to initialize: ' + error.message);
             }
         }
         
+        // Handle window resize - adapt viewport dynamically
+        async function handleWindowResize() {
+            if (!sessionId) return;
+            
+            const newViewport = getOptimalViewport();
+            
+            // Only update if resolution changed significantly (more than 50px difference)
+            if (Math.abs(newViewport.width - currentViewport.width) > 50 || 
+                Math.abs(newViewport.height - currentViewport.height) > 50) {
+                
+                console.log('🔄 Window resized, updating viewport...');
+                console.log('  Old:', `${currentViewport.width}x${currentViewport.height}`);
+                console.log('  New:', `${newViewport.width}x${newViewport.height}`);
+                
+                try {
+                    updateStatus('connecting', 'Adapting to new window size...');
+                    
+                    // Close current session
+                    if (client) {
+                        client.disconnect();
+                    }
+                    
+                    // Create new session with new viewport
+                    const response = await fetch(`${WEBRTC_SERVER}/api/session/create`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            width: newViewport.width,
+                            height: newViewport.height
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    const newSessionId = data.session_id;
+                    
+                    // Load same URL
+                    await fetch(`${WEBRTC_SERVER}/api/session/${newSessionId}/load`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: TARGET_URL })
+                    });
+                    
+                    // Reconnect WebRTC
+                    client = new JiomosaWebRTCClient(WEBRTC_SERVER, newSessionId);
+                    client.onStatus((state, message) => {
+                        updateStatus(state, message);
+                        if (state === 'connected') {
+                            document.getElementById('loading').style.display = 'none';
+                        }
+                    });
+                    client.onError((message, error) => {
+                        showError(message);
+                    });
+                    
+                    const videoElement = document.getElementById('remoteVideo');
+                    await client.connect(videoElement);
+                    client.startKeepAlive();
+                    
+                    // Update current viewport
+                    sessionId = newSessionId;
+                    currentViewport = newViewport;
+                    
+                    console.log('✅ Viewport updated successfully');
+                    
+                } catch (error) {
+                    console.error('Failed to resize viewport:', error);
+                }
+            }
+        }
+        
         function setupInputHandlers() {
             const video = document.getElementById('remoteVideo');
+            const mobileInput = document.getElementById('mobile-input');
+            let lastInputValue = '';
+            
+            // Detect if we're on mobile
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            // Mobile keyboard handling
+            if (isMobile) {
+                console.log('📱 Mobile device detected - enabling keyboard input');
+                
+                // Enhanced input event handler with better Android compatibility
+                mobileInput.addEventListener('input', (e) => {
+                    const newValue = e.target.value;
+                    console.log('Input event:', { old: lastInputValue, new: newValue });
+                    
+                    if (newValue.length > lastInputValue.length) {
+                        // Characters added
+                        const addedChars = newValue.slice(lastInputValue.length);
+                        console.log('Adding chars:', addedChars);
+                        for (let char of addedChars) {
+                            client.sendText(char);
+                        }
+                    } else if (newValue.length < lastInputValue.length) {
+                        // Characters deleted
+                        const deleteCount = lastInputValue.length - newValue.length;
+                        console.log('Deleting', deleteCount, 'chars');
+                        for (let i = 0; i < deleteCount; i++) {
+                            client.sendKey('Backspace');
+                        }
+                    }
+                    
+                    lastInputValue = newValue;
+                });
+                
+                // Handle composition events for better IME support (Asian keyboards)
+                mobileInput.addEventListener('compositionend', (e) => {
+                    console.log('Composition end:', e.data);
+                });
+                
+                // Handle Enter key and other special keys
+                mobileInput.addEventListener('keydown', (e) => {
+                    console.log('Key down:', e.key, e.keyCode);
+                    
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        client.sendKey('Enter');
+                        // Clear input after Enter
+                        mobileInput.value = '';
+                        lastInputValue = '';
+                        console.log('Enter key sent');
+                    } else if (e.key === 'Backspace') {
+                        // Backspace is handled by input event, but log it
+                        console.log('Backspace detected');
+                    }
+                });
+                
+                // Prevent input from losing focus
+                mobileInput.addEventListener('blur', () => {
+                    console.log('Input lost focus - attempting refocus');
+                    setTimeout(() => {
+                        if (document.activeElement !== mobileInput) {
+                            mobileInput.focus();
+                        }
+                    }, 100);
+                });
+                
+                // Clear the input periodically to prevent it from getting too long
+                setInterval(() => {
+                    if (mobileInput.value.length > 100) {
+                        const newVal = mobileInput.value.slice(-50);
+                        console.log('Trimming input buffer');
+                        mobileInput.value = newVal;
+                        lastInputValue = newVal;
+                    }
+                }, 2000);
+                
+                // Initial focus for mobile
+                setTimeout(() => {
+                    console.log('Initial mobile input focus');
+                    mobileInput.focus();
+                }, 1000);
+            }
             
             // Click/Touch
             video.addEventListener('click', (e) => {
                 const rect = video.getBoundingClientRect();
-                const scaleX = 720 / rect.width;  // Server viewport width
-                const scaleY = 1280 / rect.height; // Server viewport height
+                // Use actual viewport dimensions instead of hardcoded values
+                const scaleX = currentViewport.width / rect.width;
+                const scaleY = currentViewport.height / rect.height;
                 const x = (e.clientX - rect.left) * scaleX;
                 const y = (e.clientY - rect.top) * scaleY;
                 
                 client.sendClick(x, y);
+                console.log('Click sent:', {x, y});
                 
-                // Focus video for keyboard input
-                video.focus();
+                // Focus mobile input on mobile to trigger keyboard
+                if (isMobile) {
+                    console.log('Focusing mobile input after click');
+                    setTimeout(() => mobileInput.focus(), 50);
+                } else {
+                    video.focus();
+                }
             });
             
             // Touch events for mobile
@@ -354,12 +624,24 @@
                 e.preventDefault();
                 const touch = e.touches[0];
                 const rect = video.getBoundingClientRect();
-                const scaleX = 720 / rect.width;
-                const scaleY = 1280 / rect.height;
+                // Use actual viewport dimensions
+                const scaleX = currentViewport.width / rect.width;
+                const scaleY = currentViewport.height / rect.height;
                 const x = (touch.clientX - rect.left) * scaleX;
                 const y = (touch.clientY - rect.top) * scaleY;
                 
                 client.sendClick(x, y);
+                console.log('Touch sent:', {x, y});
+                
+                // Auto-focus mobile input on touch - use longer delay for reliability
+                if (isMobile) {
+                    console.log('Focusing mobile input after touch');
+                    setTimeout(() => {
+                        mobileInput.focus();
+                        // Try to trigger keyboard
+                        mobileInput.click();
+                    }, 150);
+                }
             });
             
             // Scroll
@@ -382,54 +664,70 @@
                 touchStartY = e.touches[0].clientY;
             });
             
-            // Keyboard support
-            // Make video focusable
-            video.setAttribute('tabindex', '0');
-            video.focus();
-            
-            // Handle keyboard input
-            document.addEventListener('keydown', (e) => {
-                // Don't interfere with browser shortcuts unless we're focused on the video area
-                if (document.activeElement === video || e.target === document.body) {
-                    e.preventDefault();
-                    
-                    // Map special keys
-                    const specialKeys = {
-                        'Enter': 'Enter',
-                        'Backspace': 'Backspace',
-                        'Delete': 'Delete',
-                        'Tab': 'Tab',
-                        'Escape': 'Escape',
-                        'ArrowUp': 'ArrowUp',
-                        'ArrowDown': 'ArrowDown',
-                        'ArrowLeft': 'ArrowLeft',
-                        'ArrowRight': 'ArrowRight',
-                        'Home': 'Home',
-                        'End': 'End',
-                        'PageUp': 'PageUp',
-                        'PageDown': 'PageDown',
-                        ' ': 'Space'
-                    };
-                    
-                    if (specialKeys[e.key]) {
-                        // Send special key
-                        client.sendKey(specialKeys[e.key]);
-                    } else if (e.key.length === 1) {
-                        // Regular character - send as text
-                        client.sendText(e.key);
-                    } else {
-                        // Try to send the key as-is
-                        client.sendKey(e.key);
-                    }
-                    
-                    console.log('Key pressed:', e.key, 'Code:', e.code);
-                }
-            });
-            
-            // Auto-focus video when container is clicked
-            document.getElementById('video-container').addEventListener('click', () => {
+            // Keyboard support for desktop
+            if (!isMobile) {
+                // Make video focusable
+                video.setAttribute('tabindex', '0');
                 video.focus();
-            });
+                
+                // Handle keyboard input
+                document.addEventListener('keydown', (e) => {
+                    // Don't interfere with browser shortcuts unless we're focused on the video area
+                    if (document.activeElement === video || e.target === document.body) {
+                        e.preventDefault();
+                        
+                        // Map special keys
+                        const specialKeys = {
+                            'Enter': 'Enter',
+                            'Backspace': 'Backspace',
+                            'Delete': 'Delete',
+                            'Tab': 'Tab',
+                            'Escape': 'Escape',
+                            'ArrowUp': 'ArrowUp',
+                            'ArrowDown': 'ArrowDown',
+                            'ArrowLeft': 'ArrowLeft',
+                            'ArrowRight': 'ArrowRight',
+                            'Home': 'Home',
+                            'End': 'End',
+                            'PageUp': 'PageUp',
+                            'PageDown': 'PageDown',
+                            ' ': 'Space'
+                        };
+                        
+                        if (specialKeys[e.key]) {
+                            // Send special key
+                            client.sendKey(specialKeys[e.key]);
+                        } else if (e.key.length === 1) {
+                            // Regular character - send as text
+                            client.sendText(e.key);
+                        } else {
+                            // Try to send the key as-is
+                            client.sendKey(e.key);
+                        }
+                        
+                        console.log('Key pressed:', e.key, 'Code:', e.code);
+                    }
+                });
+                
+                // Auto-focus video when container is clicked
+                document.getElementById('video-container').addEventListener('click', () => {
+                    video.focus();
+                });
+            }
+        }
+        
+        // Toggle keyboard visibility on mobile
+        function toggleKeyboard() {
+            const mobileInput = document.getElementById('mobile-input');
+            console.log('Keyboard button clicked - forcing focus');
+            mobileInput.focus();
+            // Additional trigger for stubborn keyboards
+            mobileInput.click();
+            // Show brief visual feedback
+            const indicator = document.getElementById('status-text');
+            const oldText = indicator.textContent;
+            indicator.textContent = '⌨️ Keyboard';
+            setTimeout(() => indicator.textContent = oldText, 1000);
         }
         
         function updateStatus(state, message) {

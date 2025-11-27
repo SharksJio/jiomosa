@@ -76,6 +76,8 @@ app.add_middleware(
 # Pydantic models
 class SessionCreate(BaseModel):
     session_id: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
 
 
 class URLLoad(BaseModel):
@@ -140,18 +142,24 @@ async def get_info():
 
 @app.post("/api/session/create")
 async def create_session(data: SessionCreate):
-    """Create a new browser session"""
+    """Create a new browser session with optional custom viewport"""
     try:
         session_id = data.session_id or str(uuid.uuid4())
         
-        # Create browser session
-        page = await browser_pool.create_session(session_id)
+        # Create browser session with optional custom dimensions
+        page = await browser_pool.create_session(
+            session_id,
+            width=data.width,
+            height=data.height
+        )
         
-        logger.info(f"Created session {session_id}")
+        viewport = page.viewport_size
+        logger.info(f"Created session {session_id} with viewport {viewport}")
         
         return {
             "success": True,
             "session_id": session_id,
+            "viewport": viewport,
             "websocket_url": f"/ws/signaling",
             "message": "Session created. Connect via WebSocket to start WebRTC streaming."
         }

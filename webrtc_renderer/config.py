@@ -20,13 +20,14 @@ class Settings(BaseSettings):
     workers: int = 2
     
     # WebRTC
-    webrtc_max_bitrate: int = 3000000  # 3 Mbps
+    webrtc_max_bitrate: int = 5000000  # 5 Mbps (increased for higher quality)
     webrtc_min_bitrate: int = 500000   # 500 Kbps
-    webrtc_default_bitrate: int = 1500000  # 1.5 Mbps
+    webrtc_default_bitrate: int = 2000000  # 2 Mbps (increased default)
     webrtc_video_codec: str = "H264"  # H264, VP8, VP9
-    webrtc_video_width: int = 720
-    webrtc_video_height: int = 1280
-    webrtc_framerate: int = 30
+    webrtc_video_width: int = 720   # Default width (can be overridden per session)
+    webrtc_video_height: int = 1280  # Default height (can be overridden per session)
+    webrtc_framerate: int = 30  # Default FPS (can be up to 60)
+    webrtc_max_framerate: int = 60  # Maximum supported FPS
     
     # STUN/TURN servers
     stun_server: str = "stun:stun.l.google.com:19302"
@@ -38,7 +39,7 @@ class Settings(BaseSettings):
     browser_type: str = "chromium"  # chromium, firefox, webkit
     browser_headless: bool = True
     browser_max_sessions: int = 10
-    browser_session_timeout: int = 300  # 5 minutes
+    browser_session_timeout: int = 120  # 2 minutes (faster cleanup for orphaned sessions)
     browser_pool_size: int = 3  # Pre-initialized browser instances
     
     # Performance

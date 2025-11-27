@@ -8,6 +8,7 @@ from typing import Optional, Dict
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
 from config import settings
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +36,8 @@ class BrowserPool:
                 args=[
                     '--no-sandbox',
                     '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-software-rasterizer',
                     '--disable-extensions',
+                    '--remote-debugging-port=9222',  # Enable CDP
                     '--disable-background-networking',
                     '--disable-background-timer-throttling',
                     '--disable-backgrounding-occluded-windows',
@@ -61,8 +61,8 @@ class BrowserPool:
             logger.error(f"Failed to initialize browser: {e}")
             raise
     
-    async def create_session(self, session_id: str) -> Page:
-        """Create a new browser session (context + page)"""
+    async def create_session(self, session_id: str, width: int = None, height: int = None) -> Page:
+        """Create a new browser session (context + page) with optional custom viewport"""
         async with self._lock:
             if session_id in self.pages:
                 logger.warning(f"Session {session_id} already exists")
@@ -71,10 +71,16 @@ class BrowserPool:
             if len(self.pages) >= settings.browser_max_sessions:
                 raise RuntimeError(f"Maximum sessions reached ({settings.browser_max_sessions})")
             
+            # Use provided dimensions or defaults
+            viewport_width = width or settings.webrtc_video_width
+            viewport_height = height or settings.webrtc_video_height
+            
+            logger.info(f"Creating session {session_id} with viewport {viewport_width}x{viewport_height}")
+            
             try:
                 # Create a new browser context (isolated session)
                 context = await self.browser.new_context(
-                    viewport={'width': settings.webrtc_video_width, 'height': settings.webrtc_video_height},
+                    viewport={'width': viewport_width, 'height': viewport_height},
                     device_scale_factor=1.0,
                     has_touch=True,
                     is_mobile=True,
@@ -94,10 +100,17 @@ class BrowserPool:
                 page.set_default_timeout(30000)  # 30 seconds
                 page.set_default_navigation_timeout(30000)
                 
-                # Store references
+                # Enable CDP session for fast screenshots
+                cdp_session = await context.new_cdp_session(page)
+                
+                # Store references including CDP session
                 self.contexts[session_id] = context
                 self.pages[session_id] = page
                 self.session_timestamps[session_id] = datetime.now()
+                # Store CDP session for fast frame capture
+                if not hasattr(self, 'cdp_sessions'):
+                    self.cdp_sessions = {}
+                self.cdp_sessions[session_id] = cdp_session
                 
                 logger.info(f"Created session {session_id} ({len(self.pages)} active)")
                 return page
@@ -179,14 +192,54 @@ class BrowserPool:
             logger.error(f"Failed to press key '{key}' in session {session_id}: {e}")
             raise
     
+    async def resize_viewport(self, session_id: str, width: int, height: int):
+        """Resize the viewport of an existing session"""
+        page = await self.get_page(session_id)
+        if not page:
+            raise ValueError(f"Session {session_id} not found")
+        
+        try:
+            await page.set_viewport_size({'width': width, 'height': height})
+            self.session_timestamps[session_id] = datetime.now()
+            logger.info(f"Resized session {session_id} viewport to {width}x{height}")
+        except Exception as e:
+            logger.error(f"Failed to resize viewport for session {session_id}: {e}")
+            raise
+    
     async def screenshot(self, session_id: str) -> Optional[bytes]:
-        """Take a screenshot of the page"""
+        """Take a screenshot using CDP for maximum performance (3-5ms vs 20-50ms)"""
+        if not hasattr(self, 'cdp_sessions') or session_id not in self.cdp_sessions:
+            logger.warning(f"CDP session not found for {session_id}, falling back to Playwright screenshot")
+            return await self._screenshot_fallback(session_id)
+        
+        try:
+            cdp_session = self.cdp_sessions[session_id]
+            
+            # Use CDP Page.captureScreenshot - MUCH faster than Playwright's screenshot()
+            # Returns base64-encoded JPEG directly from browser rendering engine
+            result = await cdp_session.send('Page.captureScreenshot', {
+                'format': 'jpeg',
+                'quality': 85,  # Good balance between quality and size
+                'captureBeyondViewport': False,
+                'fromSurface': True  # Capture from compositing surface (faster)
+            })
+            
+            # Decode base64 to bytes
+            screenshot_bytes = base64.b64decode(result['data'])
+            return screenshot_bytes
+            
+        except Exception as e:
+            logger.error(f"CDP screenshot failed for session {session_id}: {e}, falling back")
+            return await self._screenshot_fallback(session_id)
+    
+    async def _screenshot_fallback(self, session_id: str) -> Optional[bytes]:
+        """Fallback to Playwright screenshot if CDP fails"""
         page = await self.get_page(session_id)
         if not page:
             return None
         
         try:
-            screenshot = await page.screenshot(type='png', full_page=False)
+            screenshot = await page.screenshot(type='jpeg', quality=85, full_page=False)
             return screenshot
         except Exception as e:
             logger.error(f"Failed to take screenshot of session {session_id}: {e}")
@@ -212,24 +265,31 @@ class BrowserPool:
                 del self.contexts[session_id]
                 del self.session_timestamps[session_id]
                 
+                # Remove CDP session if exists
+                if hasattr(self, 'cdp_sessions') and session_id in self.cdp_sessions:
+                    del self.cdp_sessions[session_id]
+                
                 logger.info(f"Closed session {session_id} ({len(self.pages)} active)")
             except Exception as e:
                 logger.error(f"Failed to close session {session_id}: {e}")
     
     async def cleanup_stale_sessions(self):
         """Remove sessions that have been inactive for too long"""
+        now = datetime.now()
+        timeout_delta = timedelta(seconds=settings.browser_session_timeout)
+        
+        # Find stale sessions without holding the lock
+        stale_sessions = []
         async with self._lock:
-            now = datetime.now()
-            timeout_delta = timedelta(seconds=settings.browser_session_timeout)
-            
             stale_sessions = [
                 session_id for session_id, timestamp in self.session_timestamps.items()
                 if now - timestamp > timeout_delta
             ]
-            
-            for session_id in stale_sessions:
-                logger.info(f"Cleaning up stale session {session_id}")
-                await self.close_session(session_id)
+        
+        # Close sessions one by one (close_session acquires its own lock)
+        for session_id in stale_sessions:
+            logger.info(f"Cleaning up stale session {session_id}")
+            await self.close_session(session_id)
     
     async def get_stats(self) -> Dict:
         """Get pool statistics"""

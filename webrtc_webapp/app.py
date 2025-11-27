@@ -14,6 +14,9 @@ import json
 
 app = FastAPI(title="Jiomosa WebApp")
 
+# Timeout for proxying requests to renderer (browser initialization can be slow)
+PROXY_TIMEOUT = 90.0
+
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -155,7 +158,7 @@ async def health():
 async def proxy_create_session(request: Request):
     """Proxy session create to webrtc-renderer"""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=PROXY_TIMEOUT) as client:
             body = await request.body()
             resp = await client.post(
                 f"{WEBRTC_SERVER}/api/session/create",
@@ -184,7 +187,7 @@ async def proxy_create_session(request: Request):
 async def proxy_load_url(session_id: str, request: Request):
     """Proxy URL load to webrtc-renderer"""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=PROXY_TIMEOUT) as client:
             body = await request.body()
             resp = await client.post(
                 f"{WEBRTC_SERVER}/api/session/{session_id}/load",
@@ -213,7 +216,7 @@ async def proxy_load_url(session_id: str, request: Request):
 async def proxy_close_session(session_id: str):
     """Proxy session close to webrtc-renderer"""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=PROXY_TIMEOUT) as client:
             resp = await client.delete(f"{WEBRTC_SERVER}/api/session/{session_id}")
             return JSONResponse(content=resp.json(), status_code=resp.status_code)
     except httpx.ConnectError:
@@ -237,7 +240,7 @@ async def proxy_close_session(session_id: str):
 async def proxy_list_sessions():
     """Proxy sessions list to webrtc-renderer"""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=PROXY_TIMEOUT) as client:
             resp = await client.get(f"{WEBRTC_SERVER}/api/sessions")
             return JSONResponse(content=resp.json(), status_code=resp.status_code)
     except httpx.ConnectError:

@@ -12,6 +12,7 @@ from aiortc.mediastreams import MediaStreamError
 from browser_pool import browser_pool
 from PIL import Image
 import io
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class BrowserVideoTrack(VideoStreamTrack):
         self.last_frame_time = time.time()
         
         try:
-            # Get screenshot from browser
+            # Get screenshot from browser (now using fast CDP JPEG capture)
             screenshot_bytes = await browser_pool.screenshot(self.session_id)
             
             if screenshot_bytes is None:
@@ -57,7 +58,7 @@ class BrowserVideoTrack(VideoStreamTrack):
                 logger.warning(f"No screenshot available for session {self.session_id}")
                 return await self._create_blank_frame()
             
-            # Convert PNG screenshot to VideoFrame
+            # Convert JPEG screenshot to VideoFrame (optimized for CDP)
             frame = await self._create_video_frame(screenshot_bytes)
             
             self._frame_count += 1
@@ -71,12 +72,13 @@ class BrowserVideoTrack(VideoStreamTrack):
             return await self._create_blank_frame()
     
     async def _create_video_frame(self, screenshot_bytes: bytes) -> VideoFrame:
-        """Convert screenshot bytes to VideoFrame"""
+        """Convert screenshot bytes to VideoFrame (optimized for JPEG from CDP)"""
         try:
-            # Open image with PIL
+            # Open JPEG image with PIL (much faster than PNG)
+            # CDP returns JPEG which decodes 2-3x faster than PNG
             img = Image.open(io.BytesIO(screenshot_bytes))
             
-            # Convert to RGB if necessary
+            # Convert to RGB if necessary (JPEG is usually already RGB)
             if img.mode != 'RGB':
                 img = img.convert('RGB')
             

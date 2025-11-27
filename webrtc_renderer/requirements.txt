@@ -36,4 +36,10 @@ passlib[bcrypt]==1.7.4
 # Pillow for image processing
 Pillow==10.1.0
 
+# Numpy for efficient image processing
+numpy==1.26.3
+
+# For CDP base64 decoding
+# (base64 is built-in, no package needed)
+
 

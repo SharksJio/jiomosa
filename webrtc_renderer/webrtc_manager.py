@@ -216,16 +216,24 @@ class WebRTCManager:
         return self.peers.get(peer_id)
     
     async def close_peer(self, peer_id: str):
-        """Close a peer connection"""
+        """Close a peer connection and cleanup associated browser session"""
         async with self._lock:
             if peer_id not in self.peers:
                 logger.warning(f"Peer {peer_id} not found")
                 return
             
             peer = self.peers[peer_id]
+            session_id = peer.session_id
+            
             await peer.close()
             del self.peers[peer_id]
             logger.info(f"Closed peer {peer_id}")
+        
+        # Cleanup browser session after releasing the lock
+        if session_id:
+            from browser_pool import browser_pool
+            logger.info(f"Cleaning up browser session {session_id} for closed peer {peer_id}")
+            await browser_pool.close_session(session_id)
     
     async def close_all_peers_for_session(self, session_id: str):
         """Close all peer connections for a session"""
