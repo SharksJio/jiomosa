@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     webrtc_framerate: int = 30  # Default FPS (can be up to 60)
     webrtc_max_framerate: int = 60  # Maximum supported FPS
     
+    # Audio settings
+    audio_enabled: bool = True  # Enable audio streaming
+    audio_sample_rate: int = 48000  # 48kHz sample rate (standard for WebRTC)
+    audio_channels: int = 2  # Stereo audio
+    
     # STUN/TURN servers
     stun_server: str = "stun:stun.l.google.com:19302"
     turn_server: Optional[str] = None

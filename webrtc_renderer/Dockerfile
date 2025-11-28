@@ -75,6 +75,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libvulkan1 \
     xdg-utils \
     wget \
+    # Audio support for Linux
+    pulseaudio \
+    pulseaudio-utils \
+    alsa-utils \
+    libasound2-plugins \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python environment from builder
@@ -90,22 +95,25 @@ WORKDIR /app
 # Copy application code
 COPY . .
 
-# Copy application code
-COPY . .
-
-# Create non-root user for security
+# Create non-root user for security and configure PulseAudio
 RUN useradd -m -u 1000 jiomosa && \
     chown -R jiomosa:jiomosa /app && \
     mkdir -p /home/jiomosa/.cache/ms-playwright && \
     cp -r /root/.cache/ms-playwright/* /home/jiomosa/.cache/ms-playwright/ && \
-    chown -R jiomosa:jiomosa /home/jiomosa/.cache
+    chown -R jiomosa:jiomosa /home/jiomosa/.cache && \
+    # Configure PulseAudio for non-root user
+    mkdir -p /home/jiomosa/.config/pulse && \
+    chown -R jiomosa:jiomosa /home/jiomosa/.config
 
 USER jiomosa
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PLAYWRIGHT_BROWSERS_PATH=/home/jiomosa/.cache/ms-playwright \
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    # PulseAudio configuration
+    PULSE_SERVER=unix:/tmp/pulse-socket \
+    XDG_RUNTIME_DIR=/tmp
 
 # Expose port
 EXPOSE 8000

@@ -58,7 +58,9 @@ class BrowserPool:
                     '--use-mock-keychain',
                     '--force-color-profile=srgb',
                     '--hide-scrollbars',
-                    '--mute-audio',
+                    # Audio support - enable audio output
+                    '--autoplay-policy=no-user-gesture-required',
+                    '--disable-features=AudioServiceSandbox',
                     # DRM/Protected Content Support
                     '--enable-features=NetworkService,NetworkServiceInProcess',
                     '--disable-features=IsolateOrigins,site-per-process,TranslateUI',

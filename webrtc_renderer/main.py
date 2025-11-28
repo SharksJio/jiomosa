@@ -121,10 +121,18 @@ async def get_info():
         "name": settings.app_name,
         "version": settings.app_version,
         "webrtc": {
-            "codec": settings.webrtc_video_codec,
-            "resolution": f"{settings.webrtc_video_width}x{settings.webrtc_video_height}",
-            "framerate": settings.webrtc_framerate,
-            "bitrate_range": f"{settings.webrtc_min_bitrate}-{settings.webrtc_max_bitrate} bps"
+            "video": {
+                "codec": settings.webrtc_video_codec,
+                "resolution": f"{settings.webrtc_video_width}x{settings.webrtc_video_height}",
+                "framerate": settings.webrtc_framerate,
+                "bitrate_range": f"{settings.webrtc_min_bitrate}-{settings.webrtc_max_bitrate} bps"
+            },
+            "audio": {
+                "enabled": settings.audio_enabled,
+                "sample_rate": settings.audio_sample_rate,
+                "channels": settings.audio_channels,
+                "codec": "opus"  # WebRTC uses Opus codec for audio
+            }
         },
         "browser": browser_stats,
         "connections": webrtc_stats,
