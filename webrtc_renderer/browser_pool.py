@@ -4,6 +4,8 @@ Implements browser instance pooling for efficient resource usage
 """
 import asyncio
 import logging
+import os
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Dict
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
@@ -24,12 +26,18 @@ class BrowserPool:
         self.pages: Dict[str, Page] = {}
         self.session_timestamps: Dict[str, datetime] = {}
         self._lock = asyncio.Lock()
+        # Thread pool for parallel screenshot capture
+        self.screenshot_pool = ThreadPoolExecutor(max_workers=4)
         
     async def initialize(self):
         """Initialize Playwright and browser"""
         try:
             logger.info("Initializing Playwright...")
             self.playwright = await async_playwright().start()
+            
+            # Get hardware acceleration flags from environment
+            chromium_flags = os.environ.get('CHROMIUM_FLAGS', '')
+            extra_args = chromium_flags.split() if chromium_flags else []
             
             logger.info(f"Launching {settings.browser_type} browser...")
             self.browser = await self.playwright.chromium.launch(
@@ -65,11 +73,15 @@ class BrowserPool:
                     # DRM/Protected Content Support
                     '--enable-features=NetworkService,NetworkServiceInProcess',
                     '--disable-features=IsolateOrigins,site-per-process,TranslateUI',
-                    # Additional stealth
+                    # Additional stealth and memory optimization
                     '--disable-default-apps',
                     '--disable-component-extensions-with-background-pages',
+                    # Additional memory reduction flags
+                    '--disable-client-side-phishing-detection',
+                    '--disable-component-update',
+                    '--disable-domain-reliability',
                     '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                ],
+                ] + extra_args,
                 chromium_sandbox=False,
                 ignore_default_args=['--enable-automation', '--mute-audio'],
                 env={
@@ -508,6 +520,9 @@ class BrowserPool:
         # Stop playwright
         if self.playwright:
             await self.playwright.stop()
+        
+        # Shutdown thread pool
+        self.screenshot_pool.shutdown(wait=False)
         
         logger.info("Browser pool shutdown complete")
 

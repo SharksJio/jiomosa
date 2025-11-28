@@ -5,6 +5,7 @@ Captures frames from browser and streams via WebRTC
 import asyncio
 import logging
 import time
+from collections import deque
 from typing import Optional
 from av import VideoFrame
 from aiortc import VideoStreamTrack
@@ -31,6 +32,9 @@ class BrowserVideoTrack(VideoStreamTrack):
         self.last_frame_time = 0
         self._running = True
         self._frame_count = 0
+        # Frame buffer for skip logic - keep only latest 2 frames
+        self.frame_buffer: deque = deque(maxlen=2)
+        self._frames_skipped = 0
         logger.info(f"Initialized BrowserVideoTrack for session {session_id} at {fps} FPS")
     
     async def recv(self):
@@ -58,8 +62,25 @@ class BrowserVideoTrack(VideoStreamTrack):
                 logger.warning(f"No screenshot available for session {self.session_id}")
                 return await self._create_blank_frame()
             
+            # Add frame to buffer
+            self.frame_buffer.append(screenshot_bytes)
+            
+            # Skip frames if behind schedule (frame buffer has more than 1 frame)
+            if len(self.frame_buffer) > 1:
+                frames_to_skip = len(self.frame_buffer) - 1
+                self._frames_skipped += frames_to_skip
+                if self._frames_skipped % 10 == 0:
+                    logger.warning(f"Skipped {frames_to_skip} frames for session {self.session_id} (total skipped: {self._frames_skipped})")
+                # Clear buffer and use only latest frame
+                latest_frame = self.frame_buffer[-1]
+                self.frame_buffer.clear()
+                self.frame_buffer.append(latest_frame)
+            
+            # Get the latest frame from buffer
+            frame_bytes = self.frame_buffer[-1]
+            
             # Convert JPEG screenshot to VideoFrame (optimized for CDP)
-            frame = await self._create_video_frame(screenshot_bytes)
+            frame = await self._create_video_frame(frame_bytes)
             
             self._frame_count += 1
             if self._frame_count % 100 == 0:
@@ -82,8 +103,11 @@ class BrowserVideoTrack(VideoStreamTrack):
             if img.mode != 'RGB':
                 img = img.convert('RGB')
             
-            # Create VideoFrame from PIL image
-            frame = VideoFrame.from_image(img)
+            # Convert PIL Image to numpy array for faster VideoFrame creation
+            img_array = np.array(img, dtype=np.uint8)
+            
+            # Create VideoFrame from numpy array (faster than from_image)
+            frame = VideoFrame.from_ndarray(img_array, format="rgb24")
             
             # Set presentation timestamp
             frame.pts = self._frame_count
@@ -99,11 +123,11 @@ class BrowserVideoTrack(VideoStreamTrack):
         """Create a blank black frame"""
         from config import settings
         
-        # Create a black image
-        img = Image.new('RGB', (settings.webrtc_video_width, settings.webrtc_video_height), color='black')
+        # Create a black image using numpy (faster than PIL)
+        img_array = np.zeros((settings.webrtc_video_height, settings.webrtc_video_width, 3), dtype=np.uint8)
         
-        # Create VideoFrame
-        frame = VideoFrame.from_image(img)
+        # Create VideoFrame from numpy array
+        frame = VideoFrame.from_ndarray(img_array, format="rgb24")
         frame.pts = self._frame_count
         frame.time_base = "1/" + str(self.fps)
         
