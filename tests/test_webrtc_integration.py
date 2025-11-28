@@ -59,12 +59,23 @@ class TestWebRTCRenderer:
         assert "browser" in data
         assert "connections" in data
         
-        # Verify WebRTC config
+        # Verify WebRTC video config
         webrtc = data["webrtc"]
-        assert webrtc["codec"] in ["H264", "VP8", "VP9"]
-        assert "resolution" in webrtc
-        assert "framerate" in webrtc
-        print(f"✓ Info endpoint passed - Codec: {webrtc['codec']}, Resolution: {webrtc['resolution']}")
+        assert "video" in webrtc, "Video configuration should be present"
+        video_config = webrtc["video"]
+        assert video_config["codec"] in ["H264", "VP8", "VP9"]
+        assert "resolution" in video_config
+        assert "framerate" in video_config
+        
+        # Verify WebRTC audio config
+        assert "audio" in webrtc, "Audio configuration should be present"
+        audio_config = webrtc["audio"]
+        assert "enabled" in audio_config
+        assert "sample_rate" in audio_config
+        assert "channels" in audio_config
+        
+        print(f"✓ Info endpoint passed - Video: {video_config['codec']}, {video_config['resolution']}")
+        print(f"  Audio: enabled={audio_config['enabled']}, {audio_config['sample_rate']}Hz, {audio_config['channels']}ch")
     
     def test_create_session(self, ensure_service):
         """Test session creation"""
@@ -115,7 +126,8 @@ class TestWebRTCRenderer:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] == True
-        assert data["url"] == "https://example.com"
+        # URL may have trailing slash added by pydantic
+        assert data["url"].rstrip('/') == "https://example.com"
         print(f"✓ URL loaded successfully: {data['url']}")
         
         # Give it a moment to load

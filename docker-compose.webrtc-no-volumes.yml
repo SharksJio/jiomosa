@@ -14,6 +14,10 @@ services:
       - WEBRTC_DEFAULT_BITRATE=1500000
       - BROWSER_MAX_SESSIONS=10
       - SESSION_CLEANUP_INTERVAL=60
+      # Audio configuration
+      - AUDIO_ENABLED=true
+      - AUDIO_SAMPLE_RATE=48000
+      - AUDIO_CHANNELS=2
     ports:
       - "8000:8000"
     networks:

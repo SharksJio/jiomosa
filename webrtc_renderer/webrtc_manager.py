@@ -11,6 +11,7 @@ from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, RT
 from aiortc.contrib.media import MediaBlackhole
 from aiortc.sdp import candidate_from_sdp
 from video_track import BrowserVideoTrack
+from audio_track import BrowserAudioTrack
 from browser_pool import browser_pool
 from config import settings
 
@@ -25,6 +26,7 @@ class WebRTCPeer:
         self.peer_id = peer_id
         self.pc: Optional[RTCPeerConnection] = None
         self.video_track: Optional[BrowserVideoTrack] = None
+        self.audio_track: Optional[BrowserAudioTrack] = None
         self.created_at = datetime.now()
         self.data_channel = None
         self._setup_peer_connection()
@@ -108,7 +110,7 @@ class WebRTCPeer:
             logger.error(f"Error handling data channel message: {e}")
     
     async def create_offer(self) -> dict:
-        """Create WebRTC offer with video track"""
+        """Create WebRTC offer with video and audio tracks"""
         try:
             # Create video track
             self.video_track = BrowserVideoTrack(
@@ -116,8 +118,20 @@ class WebRTCPeer:
                 fps=settings.webrtc_framerate
             )
             
+            # Create audio track
+            self.audio_track = BrowserAudioTrack(
+                session_id=self.session_id,
+                sample_rate=settings.audio_sample_rate,
+                channels=settings.audio_channels
+            )
+            
             # Add video track to peer connection
             self.pc.addTrack(self.video_track)
+            
+            # Add audio track to peer connection
+            if settings.audio_enabled:
+                self.pc.addTrack(self.audio_track)
+                logger.info(f"Added audio track for peer {self.peer_id}")
             
             # Create data channel for input events
             self.data_channel = self.pc.createDataChannel("input")
@@ -187,6 +201,9 @@ class WebRTCPeer:
         
         if self.video_track:
             self.video_track.stop()
+        
+        if self.audio_track:
+            self.audio_track.stop()
         
         if self.pc:
             await self.pc.close()

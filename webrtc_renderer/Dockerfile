@@ -75,6 +75,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libvulkan1 \
     xdg-utils \
     wget \
+    # Audio support for Linux
+    pulseaudio \
+    pulseaudio-utils \
+    alsa-utils \
+    libasound2-plugins \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python environment from builder
@@ -90,22 +95,47 @@ WORKDIR /app
 # Copy application code
 COPY . .
 
-# Copy application code
-COPY . .
-
-# Create non-root user for security
+# Create non-root user for security and configure PulseAudio
 RUN useradd -m -u 1000 jiomosa && \
     chown -R jiomosa:jiomosa /app && \
     mkdir -p /home/jiomosa/.cache/ms-playwright && \
     cp -r /root/.cache/ms-playwright/* /home/jiomosa/.cache/ms-playwright/ && \
-    chown -R jiomosa:jiomosa /home/jiomosa/.cache
+    chown -R jiomosa:jiomosa /home/jiomosa/.cache && \
+    # Configure PulseAudio for non-root user
+    mkdir -p /home/jiomosa/.config/pulse && \
+    mkdir -p /run/user/1000 && \
+    chown -R jiomosa:jiomosa /home/jiomosa/.config && \
+    chown -R jiomosa:jiomosa /run/user/1000 && \
+    # Create PulseAudio startup script
+    echo '#!/bin/bash\n\
+# Setup runtime directory\n\
+export XDG_RUNTIME_DIR=/run/user/1000\n\
+mkdir -p $XDG_RUNTIME_DIR\n\
+chmod 700 $XDG_RUNTIME_DIR\n\
+\n\
+# Start PulseAudio daemon\n\
+pulseaudio -D --exit-idle-time=-1 --system=false --disallow-exit 2>/dev/null\n\
+sleep 2\n\
+\n\
+# Create virtual sink for browser audio capture\n\
+pactl load-module module-null-sink sink_name=browser_audio sink_properties=device.description=Browser_Audio 2>/dev/null || true\n\
+pactl set-default-sink browser_audio 2>/dev/null || true\n\
+\n\
+echo "PulseAudio setup complete"\n\
+pactl info 2>/dev/null || echo "PulseAudio failed to start"\n\
+\n\
+# Start the application\n\
+exec "$@"' > /home/jiomosa/start.sh && \
+    chmod +x /home/jiomosa/start.sh && \
+    chown jiomosa:jiomosa /home/jiomosa/start.sh
 
 USER jiomosa
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PLAYWRIGHT_BROWSERS_PATH=/home/jiomosa/.cache/ms-playwright \
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    XDG_RUNTIME_DIR=/run/user/1000
 
 # Expose port
 EXPOSE 8000
@@ -114,6 +144,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application
+# Run the application with PulseAudio setup
+ENTRYPOINT ["/home/jiomosa/start.sh"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 

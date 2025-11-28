@@ -241,13 +241,16 @@
                 <div id="url-display">{{ url }}</div>
             </div>
             <div id="status">
+                <button id="audio-toggle" onclick="toggleAudio()" title="Toggle Audio">
+                    <span class="material-icons" id="audio-icon">volume_off</span>
+                </button>
                 <div id="status-indicator"></div>
                 <span id="status-text">Connecting...</span>
             </div>
         </div>
         
         <div id="video-container">
-            <video id="remoteVideo" autoplay playsinline></video>
+            <video id="remoteVideo" autoplay playsinline muted></video>
             
             <!-- Mobile keyboard input - invisible overlay -->
             <input type="text" 
@@ -276,6 +279,9 @@
         </div>
         
         <div id="controls">
+            <button class="control-btn" onclick="toggleAudio()" title="Toggle Audio" id="audio-btn">
+                <span class="material-icons" id="audio-icon">volume_up</span>
+            </button>
             <button class="control-btn" onclick="toggleKeyboard()" title="Keyboard">
                 <span class="material-icons">keyboard</span>
             </button>
@@ -716,6 +722,26 @@
             }
         }
         
+        // Toggle audio mute/unmute
+        let audioMuted = false;
+        function toggleAudio() {
+            const video = document.getElementById('remoteVideo');
+            const audioIcon = document.getElementById('audio-icon');
+            
+            audioMuted = !audioMuted;
+            video.muted = audioMuted;
+            
+            audioIcon.textContent = audioMuted ? 'volume_off' : 'volume_up';
+            
+            // Visual feedback
+            const indicator = document.getElementById('status-text');
+            const oldText = indicator.textContent;
+            indicator.textContent = audioMuted ? '🔇 Audio Muted' : '🔊 Audio On';
+            setTimeout(() => indicator.textContent = oldText, 1000);
+            
+            console.log('Audio toggled:', audioMuted ? 'muted' : 'unmuted');
+        }
+        
         // Toggle keyboard visibility on mobile
         function toggleKeyboard() {
             const mobileInput = document.getElementById('mobile-input');
@@ -750,6 +776,21 @@
         function retryConnection() {
             hideError();
             location.reload();
+        }
+        
+        function toggleAudio() {
+            const video = document.getElementById('remoteVideo');
+            const audioIcon = document.getElementById('audio-icon');
+            
+            if (video.muted) {
+                video.muted = false;
+                audioIcon.textContent = 'volume_up';
+                console.log('🔊 Audio enabled');
+            } else {
+                video.muted = true;
+                audioIcon.textContent = 'volume_off';
+                console.log('🔇 Audio muted');
+            }
         }
         
         function goBack() {

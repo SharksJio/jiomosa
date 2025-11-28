@@ -58,7 +58,10 @@ class BrowserPool:
                     '--use-mock-keychain',
                     '--force-color-profile=srgb',
                     '--hide-scrollbars',
-                    '--mute-audio',
+                    # Audio support - enable audio output via PulseAudio
+                    '--autoplay-policy=no-user-gesture-required',
+                    '--disable-features=AudioServiceSandbox',
+                    '--alsa-output-device=default',
                     # DRM/Protected Content Support
                     '--enable-features=NetworkService,NetworkServiceInProcess',
                     '--disable-features=IsolateOrigins,site-per-process,TranslateUI',
@@ -68,9 +71,11 @@ class BrowserPool:
                     '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 ],
                 chromium_sandbox=False,
-                ignore_default_args=['--enable-automation'],
+                ignore_default_args=['--enable-automation', '--mute-audio'],
                 env={
-                    'TZ': 'America/New_York'
+                    'TZ': 'America/New_York',
+                    'PULSE_SERVER': '/run/user/1000/pulse/native',
+                    'XDG_RUNTIME_DIR': '/run/user/1000'
                 }
             )
             logger.info("Browser initialized successfully")

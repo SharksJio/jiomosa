@@ -205,11 +205,23 @@ class JiomosaWebRTCClient {
         console.log('Creating peer connection');
         this.pc = new RTCPeerConnection(this.config);
         
-        // Handle incoming tracks (video)
+        // Handle incoming tracks (video and audio)
         this.pc.ontrack = (event) => {
-            console.log('Received remote track');
+            console.log('Received remote track:', event.track.kind);
             if (this.videoElement && event.streams && event.streams[0]) {
+                // Assign the stream to the video element (handles both video and audio)
                 this.videoElement.srcObject = event.streams[0];
+                
+                // Log track types received
+                const stream = event.streams[0];
+                const videoTracks = stream.getVideoTracks();
+                const audioTracks = stream.getAudioTracks();
+                console.log(`Stream tracks - Video: ${videoTracks.length}, Audio: ${audioTracks.length}`);
+                
+                if (audioTracks.length > 0) {
+                    console.log('Audio track received, audio streaming enabled');
+                }
+                
                 this._updateStatus('connected', 'Streaming');
                 this.connected = true;
             }
