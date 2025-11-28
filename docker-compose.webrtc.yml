@@ -24,9 +24,9 @@ services:
       - jiomosa-webrtc-network
     volumes:
       - ./webrtc_renderer:/app
-    # Audio device access for Linux
-    devices:
-      - /dev/snd:/dev/snd
+    # Required for PulseAudio to work in container
+    tmpfs:
+      - /run/user/1000:mode=700,uid=1000,gid=1000
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s

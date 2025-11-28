@@ -241,13 +241,16 @@
                 <div id="url-display">{{ url }}</div>
             </div>
             <div id="status">
+                <button id="audio-toggle" onclick="toggleAudio()" title="Toggle Audio">
+                    <span class="material-icons" id="audio-icon">volume_off</span>
+                </button>
                 <div id="status-indicator"></div>
                 <span id="status-text">Connecting...</span>
             </div>
         </div>
         
         <div id="video-container">
-            <video id="remoteVideo" autoplay playsinline></video>
+            <video id="remoteVideo" autoplay playsinline muted></video>
             
             <!-- Mobile keyboard input - invisible overlay -->
             <input type="text" 
@@ -773,6 +776,21 @@
         function retryConnection() {
             hideError();
             location.reload();
+        }
+        
+        function toggleAudio() {
+            const video = document.getElementById('remoteVideo');
+            const audioIcon = document.getElementById('audio-icon');
+            
+            if (video.muted) {
+                video.muted = false;
+                audioIcon.textContent = 'volume_up';
+                console.log('🔊 Audio enabled');
+            } else {
+                video.muted = true;
+                audioIcon.textContent = 'volume_off';
+                console.log('🔇 Audio muted');
+            }
         }
         
         function goBack() {
