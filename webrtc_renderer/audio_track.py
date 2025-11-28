@@ -66,8 +66,17 @@ class BrowserAudioTrack(AudioStreamTrack):
         # In production, this would be replaced with captured browser audio
         samples = np.zeros((self.channels, self.samples_per_frame), dtype=np.int16)
         
-        # Create AudioFrame
-        frame = AudioFrame.from_ndarray(samples, format='s16', layout='stereo' if self.channels == 2 else 'mono')
+        # Create AudioFrame with proper channel layout
+        # WebRTC typically uses stereo (2 channels), but we support mono as well
+        if self.channels == 1:
+            layout = 'mono'
+        elif self.channels == 2:
+            layout = 'stereo'
+        else:
+            # For unsupported channel counts, default to stereo
+            layout = 'stereo'
+        
+        frame = AudioFrame.from_ndarray(samples, format='s16', layout=layout)
         frame.sample_rate = self.sample_rate
         frame.pts = pts
         frame.time_base = Fraction(1, self.sample_rate)
@@ -171,8 +180,16 @@ class PulseAudioTrack(AudioStreamTrack):
         
         pts = self._frame_count * self.samples_per_frame
         
-        # Create AudioFrame
-        frame = AudioFrame.from_ndarray(samples, format='s16', layout='stereo' if self.channels == 2 else 'mono')
+        # Create AudioFrame with proper channel layout
+        if self.channels == 1:
+            layout = 'mono'
+        elif self.channels == 2:
+            layout = 'stereo'
+        else:
+            # For unsupported channel counts, default to stereo
+            layout = 'stereo'
+        
+        frame = AudioFrame.from_ndarray(samples, format='s16', layout=layout)
         frame.sample_rate = self.sample_rate
         frame.pts = pts
         frame.time_base = Fraction(1, self.sample_rate)

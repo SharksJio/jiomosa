@@ -57,10 +57,11 @@ class TestAudioPipeline:
         assert "channels" in audio_config, "Audio should have 'channels'"
         assert "codec" in audio_config, "Audio should have 'codec'"
         
-        # Check expected values
-        assert audio_config["sample_rate"] == 48000, "Sample rate should be 48000 Hz"
-        assert audio_config["channels"] in [1, 2], "Channels should be 1 or 2"
-        assert audio_config["codec"] == "opus", "Codec should be opus"
+        # Check expected values (standard WebRTC audio configuration)
+        # Note: These are WebRTC standard values, not hard-coded from config
+        assert audio_config["sample_rate"] == 48000, "Sample rate should be 48000 Hz (WebRTC standard)"
+        assert audio_config["channels"] in [1, 2], "Channels should be 1 (mono) or 2 (stereo)"
+        assert audio_config["codec"] == "opus", "Codec should be opus (WebRTC standard)"
         
         print(f"✓ Audio configuration verified:")
         print(f"  - Enabled: {audio_config['enabled']}")
