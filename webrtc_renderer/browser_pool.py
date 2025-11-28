@@ -5,7 +5,6 @@ Implements browser instance pooling for efficient resource usage
 import asyncio
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Dict
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
@@ -26,8 +25,6 @@ class BrowserPool:
         self.pages: Dict[str, Page] = {}
         self.session_timestamps: Dict[str, datetime] = {}
         self._lock = asyncio.Lock()
-        # Thread pool for parallel screenshot capture
-        self.screenshot_pool = ThreadPoolExecutor(max_workers=4)
         
     async def initialize(self):
         """Initialize Playwright and browser"""
@@ -520,9 +517,6 @@ class BrowserPool:
         # Stop playwright
         if self.playwright:
             await self.playwright.stop()
-        
-        # Shutdown thread pool
-        self.screenshot_pool.shutdown(wait=False)
         
         logger.info("Browser pool shutdown complete")
 
