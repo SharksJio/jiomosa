@@ -371,9 +371,72 @@
             };
         }
         
+        // Check if browser supports WebRTC
+        function checkWebRTCSupport() {
+            const hasRTCPeerConnection = !!(window.RTCPeerConnection || window.webkitRTCPeerConnection || window.mozRTCPeerConnection);
+            const hasWebSocket = !!window.WebSocket;
+            const hasGetUserMedia = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+            
+            console.log('🔍 Browser capability check:');
+            console.log('  - RTCPeerConnection:', hasRTCPeerConnection);
+            console.log('  - WebSocket:', hasWebSocket);
+            console.log('  - getUserMedia:', hasGetUserMedia);
+            console.log('  - User Agent:', navigator.userAgent);
+            
+            // Check for KaiOS or other feature phones
+            const isKaiOS = /KAIOS/i.test(navigator.userAgent);
+            const isFirefoxOS = /Firefox.*Mobile/i.test(navigator.userAgent) && !/Android/i.test(navigator.userAgent);
+            
+            if (isKaiOS || isFirefoxOS) {
+                console.log('⚠️ KaiOS/Firefox OS detected - WebRTC may have limited support');
+            }
+            
+            return {
+                supported: hasRTCPeerConnection && hasWebSocket,
+                hasRTCPeerConnection,
+                hasWebSocket,
+                hasGetUserMedia,
+                isKaiOS,
+                isFirefoxOS
+            };
+        }
+        
+        // Helper to add timeout to promises
+        function withTimeout(promise, timeoutMs, errorMessage) {
+            return Promise.race([
+                promise,
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+                )
+            ]);
+        }
+        
         // Initialize
         async function init() {
+            // Connection timeout (60 seconds total for all initialization steps)
+            const CONNECTION_TIMEOUT = 60000;
+            // Individual step timeouts
+            const SESSION_CREATE_TIMEOUT = 30000;
+            const URL_LOAD_TIMEOUT = 30000;
+            const WEBRTC_CONNECT_TIMEOUT = 30000;
+            
             try {
+                // Check browser support first
+                const browserSupport = checkWebRTCSupport();
+                if (!browserSupport.supported) {
+                    let errorMsg = 'Your browser does not support WebRTC streaming. ';
+                    if (!browserSupport.hasRTCPeerConnection) {
+                        errorMsg += 'RTCPeerConnection is not available. ';
+                    }
+                    if (!browserSupport.hasWebSocket) {
+                        errorMsg += 'WebSocket is not available. ';
+                    }
+                    if (browserSupport.isKaiOS) {
+                        errorMsg += 'KaiOS has limited WebRTC support. Please try using a different browser or device.';
+                    }
+                    throw new Error(errorMsg);
+                }
+                
                 // Get optimal settings for this device
                 const viewport = getOptimalViewport();
                 currentViewport = viewport;
@@ -385,9 +448,11 @@
                 console.log('  - Screen:', `${window.screen.width}x${window.screen.height}`);
                 console.log('  - Window:', `${window.innerWidth}x${window.innerHeight}`);
                 
-                // Create session with optimal viewport
-                updateStatus('connecting', `Creating optimized session (${viewport.width}x${viewport.height}@${targetFps}fps)...`);
-                const response = await fetch(`${WEBRTC_SERVER}/api/session/create`, {
+                // Create session with optimal viewport (with timeout)
+                updateStatus('connecting', `Creating session...`);
+                updateLoadingText('Creating browser session...');
+                
+                const createSessionPromise = fetch(`${WEBRTC_SERVER}/api/session/create`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -396,29 +461,62 @@
                     })
                 });
                 
+                const response = await withTimeout(
+                    createSessionPromise, 
+                    SESSION_CREATE_TIMEOUT, 
+                    'Session creation timed out. The server may be busy or unavailable.'
+                );
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || `Server error: ${response.status}`);
+                }
+                
                 const data = await response.json();
+                if (!data.session_id) {
+                    throw new Error('Invalid server response: missing session ID');
+                }
                 sessionId = data.session_id;
                 
                 console.log('✅ Session created:', sessionId);
                 console.log('✅ Server viewport:', data.viewport);
                 
-                // Load URL
+                // Load URL (with timeout)
                 updateStatus('connecting', 'Loading website...');
-                await fetch(`${WEBRTC_SERVER}/api/session/${sessionId}/load`, {
+                updateLoadingText('Loading ' + TARGET_URL.replace(/^https?:\/\//, '').split('/')[0] + '...');
+                
+                const loadUrlPromise = fetch(`${WEBRTC_SERVER}/api/session/${sessionId}/load`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ url: TARGET_URL })
                 });
                 
+                const loadResponse = await withTimeout(
+                    loadUrlPromise,
+                    URL_LOAD_TIMEOUT,
+                    'Page loading timed out. The website may be slow or unresponsive.'
+                );
+                
+                if (!loadResponse.ok) {
+                    const errorData = await loadResponse.json().catch(() => ({}));
+                    throw new Error(errorData.error || `Failed to load URL: ${loadResponse.status}`);
+                }
+                
                 console.log('URL loaded');
                 
-                // Connect WebRTC
-                updateStatus('connecting', 'Connecting WebRTC...');
+                // Connect WebRTC (with timeout)
+                updateStatus('connecting', 'Connecting stream...');
+                updateLoadingText('Connecting to stream...');
+                
                 client = new JiomosaWebRTCClient(WEBRTC_SERVER, sessionId);
+                
+                // Track if we've connected successfully
+                let connectionSuccessful = false;
                 
                 client.onStatus((state, message) => {
                     updateStatus(state, message);
                     if (state === 'connected') {
+                        connectionSuccessful = true;
                         document.getElementById('loading').style.display = 'none';
                     }
                 });
@@ -428,7 +526,14 @@
                 });
                 
                 const videoElement = document.getElementById('remoteVideo');
-                await client.connect(videoElement);
+                
+                // Wrap the WebRTC connection in a timeout
+                const connectPromise = client.connect(videoElement);
+                await withTimeout(
+                    connectPromise,
+                    WEBRTC_CONNECT_TIMEOUT,
+                    'WebRTC connection timed out. Your browser may not fully support WebRTC or there may be network issues.'
+                );
                 
                 // Start keep-alive
                 client.startKeepAlive();
@@ -443,9 +548,28 @@
                 console.log('🎮 WebRTC streaming started with optimizations');
                 console.log('💡 Tip: Resize window to see adaptive resolution');
                 
+                // Set a secondary timeout to ensure video starts playing
+                setTimeout(() => {
+                    if (!connectionSuccessful && document.getElementById('loading').style.display !== 'none') {
+                        console.warn('⚠️ Video stream not started after extended wait');
+                        showError('Stream connection timeout. The connection was established but video stream did not start. This may indicate a browser compatibility issue.');
+                    }
+                }, WEBRTC_CONNECT_TIMEOUT);
+                
             } catch (error) {
                 console.error('Initialization error:', error);
                 showError('Failed to initialize: ' + error.message);
+            }
+        }
+        
+        // Update the loading text
+        function updateLoadingText(text) {
+            const loadingElement = document.getElementById('loading');
+            if (loadingElement) {
+                const pElement = loadingElement.querySelector('p');
+                if (pElement) {
+                    pElement.textContent = text;
+                }
             }
         }
         
@@ -765,6 +889,15 @@
         }
         
         function showError(message) {
+            // Hide loading indicator when showing error
+            const loadingElement = document.getElementById('loading');
+            if (loadingElement) {
+                loadingElement.style.display = 'none';
+            }
+            
+            // Update status to error state
+            updateStatus('error', 'Error');
+            
             document.getElementById('error-message').textContent = message;
             document.getElementById('error-dialog').classList.add('show');
         }
