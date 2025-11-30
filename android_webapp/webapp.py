@@ -674,7 +674,23 @@ LAUNCHER_TEMPLATE = """
             statusText.textContent = message;
         }
         
+        // Helper to add timeout to fetch requests
+        function fetchWithTimeout(url, options, timeoutMs = 30000) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+            
+            return fetch(url, {
+                ...options,
+                signal: controller.signal
+            }).finally(() => clearTimeout(timeoutId));
+        }
+        
         async function launchApp(url, appName) {
+            // Timeout constants
+            const SESSION_TIMEOUT = 30000;  // 30 seconds for session creation
+            const LOAD_TIMEOUT = 45000;     // 45 seconds for URL loading
+            const VERIFY_TIMEOUT = 10000;   // 10 seconds for verification
+            
             try {
                 showLoading(`Launching ${appName}`, 'Setting up cloud browser...');
                 
@@ -682,14 +698,26 @@ LAUNCHER_TEMPLATE = """
                 if (!currentSessionId) {
                     currentSessionId = `android_app_${Date.now()}`;
                     
-                    const createResponse = await fetch(`${JIOMOSA_SERVER}/api/session/create`, {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({session_id: currentSessionId})
-                    });
-                    
-                    if (!createResponse.ok) {
-                        throw new Error('Failed to create session');
+                    try {
+                        const createResponse = await fetchWithTimeout(
+                            `${JIOMOSA_SERVER}/api/session/create`,
+                            {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({session_id: currentSessionId})
+                            },
+                            SESSION_TIMEOUT
+                        );
+                        
+                        if (!createResponse.ok) {
+                            const errorData = await createResponse.json().catch(() => ({}));
+                            throw new Error(errorData.error || 'Failed to create session');
+                        }
+                    } catch (e) {
+                        if (e.name === 'AbortError') {
+                            throw new Error('Session creation timed out. Server may be busy.');
+                        }
+                        throw e;
                     }
                     
                     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -698,26 +726,46 @@ LAUNCHER_TEMPLATE = """
                 // Load URL
                 showLoading(`Loading ${appName}`, 'Rendering website on cloud...');
                 
-                const loadResponse = await fetch(
-                    `${JIOMOSA_SERVER}/api/session/${currentSessionId}/load`,
-                    {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({url: url})
+                try {
+                    const loadResponse = await fetchWithTimeout(
+                        `${JIOMOSA_SERVER}/api/session/${currentSessionId}/load`,
+                        {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({url: url})
+                        },
+                        LOAD_TIMEOUT
+                    );
+                    
+                    if (!loadResponse.ok) {
+                        const errorData = await loadResponse.json().catch(() => ({}));
+                        throw new Error(errorData.error || 'Failed to load URL');
                     }
-                );
-                
-                if (!loadResponse.ok) {
-                    throw new Error('Failed to load URL');
+                } catch (e) {
+                    if (e.name === 'AbortError') {
+                        throw new Error('Page loading timed out. The website may be slow or unresponsive.');
+                    }
+                    throw e;
                 }
                 
                 // Wait for rendering
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 
                 // Verify session exists before redirecting
-                const verifyResponse = await fetch(`${JIOMOSA_SERVER}/api/session/${currentSessionId}/info`);
-                if (!verifyResponse.ok) {
-                    throw new Error('Session verification failed - session may have timed out');
+                try {
+                    const verifyResponse = await fetchWithTimeout(
+                        `${JIOMOSA_SERVER}/api/session/${currentSessionId}/info`,
+                        {},
+                        VERIFY_TIMEOUT
+                    );
+                    if (!verifyResponse.ok) {
+                        throw new Error('Session verification failed - session may have timed out');
+                    }
+                } catch (e) {
+                    if (e.name === 'AbortError') {
+                        throw new Error('Session verification timed out');
+                    }
+                    throw e;
                 }
                 
                 // Redirect to viewer
@@ -725,6 +773,8 @@ LAUNCHER_TEMPLATE = """
                 
             } catch (error) {
                 console.error('Error launching app:', error);
+                // Reset session ID on error so next attempt creates a new session
+                currentSessionId = null;
                 hideLoading();
                 alert(`Failed to launch ${appName}: ${error.message}`);
             }
@@ -1038,6 +1088,16 @@ VIEWER_TEMPLATE = """
 
             streamingClient = new FrameStreamingClient(Object.assign({
                     onFrame: (frameData) => {
+                        // Mark first frame received and clear connection timeout
+                        if (!firstFrameReceived) {
+                            firstFrameReceived = true;
+                            if (connectionTimeoutId) {
+                                clearTimeout(connectionTimeoutId);
+                                connectionTimeoutId = null;
+                            }
+                            console.log('[Viewer] First frame received - connection successful');
+                        }
+                        
                         // Update image source
                         browserFrame.src = frameData.image;
                         browserFrame.classList.add('loaded');
@@ -1351,20 +1411,49 @@ VIEWER_TEMPLATE = """
         `;
         document.head.appendChild(style);
         
+        // Connection timeout constant
+        const CONNECTION_TIMEOUT = 30000; // 30 seconds
+        let connectionTimeoutId = null;
+        let firstFrameReceived = false;
+        
+        // Helper to add timeout to fetch requests
+        function fetchWithTimeout(url, options, timeoutMs = 10000) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+            
+            return fetch(url, {
+                ...options,
+                signal: controller.signal
+            }).finally(() => clearTimeout(timeoutId));
+        }
+        
+        // Show connection error and return to launcher
+        function showConnectionError(message) {
+            console.error('[Viewer] Connection error:', message);
+            // Hide loading indicator
+            if (loadingIndicator) {
+                loadingIndicator.classList.add('hidden');
+            }
+            alert(message);
+            window.location.href = '/';
+        }
+        
         // Auto-start streaming on page load
         window.addEventListener('load', async () => {
-            // First verify the session exists
+            // First verify the session exists (with timeout)
             try {
-                const response = await fetch(`/proxy/api/session/${sessionId}/info`);
+                const response = await fetchWithTimeout(`/proxy/api/session/${sessionId}/info`, {}, 10000);
                 if (!response.ok) {
-                    alert('Session not found. Returning to launcher...');
-                    window.location.href = '/';
+                    showConnectionError('Session not found. Returning to launcher...');
                     return;
                 }
             } catch (error) {
                 console.error('Failed to verify session:', error);
-                alert('Failed to connect. Returning to launcher...');
-                window.location.href = '/';
+                if (error.name === 'AbortError') {
+                    showConnectionError('Session verification timed out. Server may be busy.');
+                } else {
+                    showConnectionError('Failed to connect. Returning to launcher...');
+                }
                 return;
             }
             
@@ -1372,6 +1461,15 @@ VIEWER_TEMPLATE = """
             if (!isInitialized) {
                 console.log('[Viewer] Starting streaming client initialization');
                 isInitialized = true;
+                
+                // Set a connection timeout - if no frame received within timeout, show error
+                connectionTimeoutId = setTimeout(() => {
+                    if (!firstFrameReceived) {
+                        console.error('[Viewer] Connection timeout - no frames received');
+                        showConnectionError('Connection timeout. Failed to receive video stream. Your browser may not support WebSocket streaming or there may be network issues.');
+                    }
+                }, CONNECTION_TIMEOUT);
+                
                 setTimeout(() => {
                     initStreamingClient();
                     // Don't subscribe immediately - wait for connection
