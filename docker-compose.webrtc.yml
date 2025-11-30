@@ -6,6 +6,9 @@ services:
       dockerfile: Dockerfile
     container_name: jiomosa-webrtc-renderer
     restart: unless-stopped
+    # GPU access for hardware acceleration (optional - falls back to software rendering)
+    devices:
+      - /dev/dri:/dev/dri
     environment:
       - DEBUG=false
       - WEBRTC_VIDEO_WIDTH=720
@@ -18,6 +21,8 @@ services:
       - AUDIO_ENABLED=true
       - AUDIO_SAMPLE_RATE=48000
       - AUDIO_CHANNELS=2
+      # Hardware acceleration flags for Chromium
+      - CHROMIUM_FLAGS=--enable-accelerated-video-decode --enable-gpu-rasterization --use-gl=egl
     ports:
       - "8000:8000"
     networks:

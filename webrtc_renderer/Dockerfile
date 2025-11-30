@@ -80,6 +80,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pulseaudio-utils \
     alsa-utils \
     libasound2-plugins \
+    # VA-API drivers for hardware acceleration (fallback to software if unavailable)
+    vainfo \
+    mesa-va-drivers \
+    libva-drm2 \
+    libva2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python environment from builder

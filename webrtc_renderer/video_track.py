@@ -31,6 +31,10 @@ class BrowserVideoTrack(VideoStreamTrack):
         self.last_frame_time = 0
         self._running = True
         self._frame_count = 0
+        # Track frame timing for skip logic
+        self._last_screenshot_bytes: Optional[bytes] = None
+        self._frames_skipped = 0
+        self._frame_deadline = 0
         logger.info(f"Initialized BrowserVideoTrack for session {session_id} at {fps} FPS")
     
     async def recv(self):
@@ -41,13 +45,34 @@ class BrowserVideoTrack(VideoStreamTrack):
         if not self._running:
             raise MediaStreamError("Track stopped")
         
-        # Rate limiting to maintain target FPS
         current_time = time.time()
+        
+        # Calculate frame deadline for skip logic
+        if self._frame_deadline == 0:
+            self._frame_deadline = current_time + self.frame_interval
+        
+        # Rate limiting to maintain target FPS
         elapsed = current_time - self.last_frame_time
         if elapsed < self.frame_interval:
             await asyncio.sleep(self.frame_interval - elapsed)
         
         self.last_frame_time = time.time()
+        
+        # Check if we're behind schedule and should skip frame capture
+        if current_time > self._frame_deadline + self.frame_interval and self._last_screenshot_bytes is not None:
+            # We're more than 1 frame behind schedule - reuse last frame
+            frames_behind = int((current_time - self._frame_deadline) / self.frame_interval)
+            self._frames_skipped += 1
+            if self._frames_skipped % 10 == 0:
+                logger.warning(f"Skipped frame capture for session {self.session_id}, {frames_behind} frames behind (total skipped: {self._frames_skipped})")
+            # Reuse last frame to catch up
+            self._frame_deadline = current_time + self.frame_interval
+            frame = await self._create_video_frame(self._last_screenshot_bytes)
+            self._frame_count += 1
+            return frame
+        
+        # Update deadline for next frame
+        self._frame_deadline = current_time + self.frame_interval
         
         try:
             # Get screenshot from browser (now using fast CDP JPEG capture)
@@ -57,6 +82,9 @@ class BrowserVideoTrack(VideoStreamTrack):
                 # If no screenshot available, return a blank frame
                 logger.warning(f"No screenshot available for session {self.session_id}")
                 return await self._create_blank_frame()
+            
+            # Cache the screenshot for potential reuse
+            self._last_screenshot_bytes = screenshot_bytes
             
             # Convert JPEG screenshot to VideoFrame (optimized for CDP)
             frame = await self._create_video_frame(screenshot_bytes)
@@ -82,8 +110,11 @@ class BrowserVideoTrack(VideoStreamTrack):
             if img.mode != 'RGB':
                 img = img.convert('RGB')
             
-            # Create VideoFrame from PIL image
-            frame = VideoFrame.from_image(img)
+            # Convert PIL Image to numpy array for faster VideoFrame creation
+            img_array = np.array(img, dtype=np.uint8)
+            
+            # Create VideoFrame from numpy array (faster than from_image)
+            frame = VideoFrame.from_ndarray(img_array, format="rgb24")
             
             # Set presentation timestamp
             frame.pts = self._frame_count
@@ -99,11 +130,11 @@ class BrowserVideoTrack(VideoStreamTrack):
         """Create a blank black frame"""
         from config import settings
         
-        # Create a black image
-        img = Image.new('RGB', (settings.webrtc_video_width, settings.webrtc_video_height), color='black')
+        # Create a black image using numpy (faster than PIL)
+        img_array = np.zeros((settings.webrtc_video_height, settings.webrtc_video_width, 3), dtype=np.uint8)
         
-        # Create VideoFrame
-        frame = VideoFrame.from_image(img)
+        # Create VideoFrame from numpy array
+        frame = VideoFrame.from_ndarray(img_array, format="rgb24")
         frame.pts = self._frame_count
         frame.time_base = "1/" + str(self.fps)
         

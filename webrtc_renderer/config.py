@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
-    workers: int = 2
+    workers: int = 4  # Increased from 2 to match CPU cores
     
     # WebRTC
     webrtc_max_bitrate: int = 5000000  # 5 Mbps (increased for higher quality)
