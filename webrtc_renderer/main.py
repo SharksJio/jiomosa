@@ -277,8 +277,15 @@ async def websocket_signaling(websocket: WebSocket):
                     })
                     continue
                 
-                # Create WebRTC peer
-                peer = await webrtc_manager.create_peer(session_id, peer_id)
+                # Callback for sending ICE candidates to client
+                async def send_ice_candidate(candidate_msg):
+                    try:
+                        await websocket.send_json(candidate_msg)
+                    except Exception as e:
+                        logger.error(f"Failed to send ICE candidate: {e}")
+                
+                # Create WebRTC peer with callback
+                peer = await webrtc_manager.create_peer(session_id, peer_id, send_ice_candidate)
                 
                 # Create and send offer
                 offer = await peer.create_offer()

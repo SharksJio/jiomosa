@@ -34,11 +34,16 @@ class Settings(BaseSettings):
     audio_sample_rate: int = 48000  # 48kHz sample rate (standard for WebRTC)
     audio_channels: int = 2  # Stereo audio
     
-    # STUN/TURN servers
+    # STUN/TURN servers (multiple for reliability)
     stun_server: str = "stun:stun.l.google.com:19302"
-    turn_server: Optional[str] = None
-    turn_username: Optional[str] = None
-    turn_password: Optional[str] = None
+    stun_servers: list[str] = [
+        "stun:stun.l.google.com:19302",
+        "stun:stun1.l.google.com:19302"
+    ]
+    # Local TURN server for Docker development (host.docker.internal resolves to host from container)
+    turn_server: Optional[str] = "turn:host.docker.internal:3478"
+    turn_username: Optional[str] = "jiomosa"
+    turn_password: Optional[str] = "jiomosapass"
     
     # Browser settings
     browser_type: str = "chromium"  # chromium, firefox, webkit

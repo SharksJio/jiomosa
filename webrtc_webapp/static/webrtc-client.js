@@ -14,12 +14,25 @@ class JiomosaWebRTCClient {
         this.statusCallback = null;
         this.errorCallback = null;
         
-        // WebRTC configuration
+        // WebRTC configuration with multiple STUN servers for reliability
+        // Include TURN servers for NAT traversal (especially needed for Docker)
         this.config = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
+                { urls: 'stun:stun1.l.google.com:19302' },
+                // Local TURN server for Docker development
+                {
+                    urls: 'turn:127.0.0.1:3478',
+                    username: 'jiomosa',
+                    credential: 'jiomosapass'
+                },
+                {
+                    urls: 'turn:127.0.0.1:3478?transport=tcp',
+                    username: 'jiomosa',
+                    credential: 'jiomosapass'
+                }
+            ],
+            iceCandidatePoolSize: 10
         };
         
         // Connection state
@@ -230,6 +243,7 @@ class JiomosaWebRTCClient {
         // Handle ICE candidates
         this.pc.onicecandidate = (event) => {
             if (event.candidate) {
+                console.log('Sending ICE candidate:', event.candidate.candidate.substring(0, 80) + '...');
                 this._sendMessage({
                     type: 'ice-candidate',
                     candidate: {
@@ -238,7 +252,14 @@ class JiomosaWebRTCClient {
                         sdpMLineIndex: event.candidate.sdpMLineIndex
                     }
                 });
+            } else {
+                console.log('ICE gathering complete');
             }
+        };
+        
+        // Log ICE gathering state
+        this.pc.onicegatheringstatechange = () => {
+            console.log('ICE gathering state:', this.pc.iceGatheringState);
         };
         
         // Handle connection state changes
@@ -297,6 +318,10 @@ class JiomosaWebRTCClient {
             case 'offer':
                 await this._handleOffer(message.offer);
                 break;
+            
+            case 'ice-candidate':
+                await this._handleRemoteIceCandidate(message.candidate);
+                break;
                 
             case 'ready':
                 console.log('WebRTC connection ready');
@@ -314,6 +339,17 @@ class JiomosaWebRTCClient {
                 
             default:
                 console.warn('Unknown message type:', message.type);
+        }
+    }
+    
+    async _handleRemoteIceCandidate(candidate) {
+        try {
+            if (candidate && candidate.candidate && this.pc) {
+                console.log('Adding remote ICE candidate');
+                await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+            }
+        } catch (error) {
+            console.error('Error adding remote ICE candidate:', error);
         }
     }
     

@@ -1,4 +1,30 @@
 services:
+  # Coturn TURN server for NAT traversal (required for Docker on Windows)
+  turn-server:
+    image: coturn/coturn:latest
+    container_name: jiomosa-turn-server
+    restart: unless-stopped
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "49152-49200:49152-49200/udp"
+    networks:
+      - jiomosa-webrtc-network
+    command: >
+      -n
+      --log-file=stdout
+      --min-port=49152
+      --max-port=49200
+      --realm=jiomosa.local
+      --fingerprint
+      --lt-cred-mech
+      --user=jiomosa:jiomosapass
+      --listening-ip=0.0.0.0
+      --external-ip=127.0.0.1
+      --no-multicast-peers
+      --no-cli
+      --verbose
+
   # WebRTC Renderer - Modern FastAPI + aiortc streaming server
   webrtc-renderer:
     build:
@@ -6,9 +32,6 @@ services:
       dockerfile: Dockerfile
     container_name: jiomosa-webrtc-renderer
     restart: unless-stopped
-    # GPU access for hardware acceleration (optional - falls back to software rendering)
-    devices:
-      - /dev/dri:/dev/dri
     environment:
       - DEBUG=false
       - WEBRTC_VIDEO_WIDTH=720
@@ -23,8 +46,12 @@ services:
       - AUDIO_CHANNELS=2
       # Hardware acceleration flags for Chromium
       - CHROMIUM_FLAGS=--enable-accelerated-video-decode --enable-gpu-rasterization --use-gl=egl
+      # Announce 127.0.0.1 so browser can connect to Docker-mapped ports
+      - ANNOUNCED_IP=127.0.0.1
     ports:
       - "8000:8000"
+      # UDP ports for WebRTC media (ICE candidates)
+      - "10000-10100:10000-10100/udp"
     networks:
       - jiomosa-webrtc-network
     volumes:
@@ -32,6 +59,8 @@ services:
     # Required for PulseAudio to work in container
     tmpfs:
       - /run/user/1000:mode=700,uid=1000,gid=1000
+    # GPU acceleration: Use docker-compose.webrtc.linux.yml override on Linux
+    # Example: docker compose -f docker-compose.webrtc.yml -f docker-compose.webrtc.linux.yml up -d
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -56,6 +85,7 @@ services:
       - jiomosa-webrtc-network
     volumes:
       - ./webrtc_webapp:/app
+      - webapp-data:/app/data
 
   # Optional: TURN server for NAT traversal (coturn)
   # Uncomment if you need TURN support for production deployment
@@ -95,6 +125,9 @@ services:
 networks:
   jiomosa-webrtc-network:
     driver: bridge
+
+volumes:
+  webapp-data:
 
 # volumes:
 #   redis-data:

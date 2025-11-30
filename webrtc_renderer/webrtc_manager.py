@@ -10,6 +10,7 @@ from datetime import datetime
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, RTCConfiguration, RTCIceServer
 from aiortc.contrib.media import MediaBlackhole
 from aiortc.sdp import candidate_from_sdp
+import aioice
 from video_track import BrowserVideoTrack
 from audio_track import BrowserAudioTrack
 from browser_pool import browser_pool
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 class WebRTCPeer:
     """Manages a WebRTC peer connection for a session"""
     
-    def __init__(self, session_id: str, peer_id: str):
+    def __init__(self, session_id: str, peer_id: str, send_candidate_callback=None):
         self.session_id = session_id
         self.peer_id = peer_id
         self.pc: Optional[RTCPeerConnection] = None
@@ -29,12 +30,13 @@ class WebRTCPeer:
         self.audio_track: Optional[BrowserAudioTrack] = None
         self.created_at = datetime.now()
         self.data_channel = None
+        self.send_candidate_callback = send_candidate_callback
         self._setup_peer_connection()
         
     def _setup_peer_connection(self):
         """Initialize RTCPeerConnection with STUN/TURN servers"""
-        # Configure ICE servers
-        ice_servers = [RTCIceServer(urls=[settings.stun_server])]
+        # Configure ICE servers - use multiple STUN servers for reliability
+        ice_servers = [RTCIceServer(urls=settings.stun_servers)]
         
         if settings.turn_server:
             ice_servers.append(RTCIceServer(
@@ -58,6 +60,20 @@ class WebRTCPeer:
         async def on_iceconnectionstatechange():
             logger.info(f"ICE connection state for {self.peer_id}: {self.pc.iceConnectionState}")
         
+        @self.pc.on("icecandidate")
+        async def on_icecandidate(candidate):
+            """Send our ICE candidates to the remote peer"""
+            if candidate and self.send_candidate_callback:
+                logger.info(f"Sending ICE candidate for {self.peer_id}")
+                await self.send_candidate_callback({
+                    "type": "ice-candidate",
+                    "candidate": {
+                        "candidate": candidate.candidate,
+                        "sdpMid": candidate.sdpMid,
+                        "sdpMLineIndex": candidate.sdpMLineIndex
+                    }
+                })
+        
         @self.pc.on("datachannel")
         def on_datachannel(channel):
             logger.info(f"Data channel established: {channel.label}, readyState: {channel.readyState}")
@@ -77,6 +93,38 @@ class WebRTCPeer:
                 logger.info(f"Data channel closed: {channel.label}")
         
         logger.info(f"WebRTC peer connection created for {self.peer_id}")
+    
+    def _modify_sdp_for_docker(self, sdp: str) -> str:
+        """
+        Modify SDP to replace container IP addresses with host-accessible addresses.
+        This is needed for Docker on Windows where container IPs (172.x.x.x) aren't 
+        directly reachable from the host browser.
+        """
+        import re
+        import os
+        
+        # Get the host address - use 127.0.0.1 for local Docker development
+        # In production, this should be the actual public IP
+        host_ip = os.environ.get('ANNOUNCED_IP', '127.0.0.1')
+        
+        # Replace container IPs in ICE candidates
+        # Pattern: a=candidate:... <IP> <PORT> typ host ...
+        # Replace 172.x.x.x addresses with host IP
+        modified_sdp = re.sub(
+            r'(a=candidate:\d+ \d+ udp \d+ )172\.\d+\.\d+\.\d+( \d+ typ host)',
+            rf'\g<1>{host_ip}\g<2>',
+            sdp
+        )
+        
+        # Also replace in c= line (connection info)
+        modified_sdp = re.sub(
+            r'(c=IN IP4 )172\.\d+\.\d+\.\d+',
+            rf'\g<1>{host_ip}',
+            modified_sdp
+        )
+        
+        logger.info(f"Modified SDP to use host IP: {host_ip}")
+        return modified_sdp
     
     async def _handle_data_channel_message(self, message: str):
         """Handle messages from the data channel (input events)"""
@@ -155,10 +203,14 @@ class WebRTCPeer:
             offer = await self.pc.createOffer()
             await self.pc.setLocalDescription(offer)
             
+            # Modify SDP to replace container IP with host-accessible address
+            # This is needed for Docker on Windows where container IPs aren't directly reachable
+            modified_sdp = self._modify_sdp_for_docker(self.pc.localDescription.sdp)
+            
             logger.info(f"Created offer for peer {self.peer_id}")
             
             return {
-                "sdp": self.pc.localDescription.sdp,
+                "sdp": modified_sdp,
                 "type": self.pc.localDescription.type
             }
             
@@ -183,6 +235,15 @@ class WebRTCPeer:
             candidate_sdp = candidate.get("candidate")
             if not candidate_sdp:
                 logger.warning(f"Empty candidate received for peer {self.peer_id}")
+                return
+            
+            # Log all received candidates for debugging
+            logger.info(f"Received ICE candidate for {self.peer_id}: {candidate_sdp[:100]}...")
+            
+            # Skip mDNS candidates (.local) - they can't be resolved in Docker
+            # These are privacy-protected hostnames that only work in local network
+            if ".local" in candidate_sdp:
+                logger.info(f"Skipping mDNS candidate for peer {self.peer_id}")
                 return
                 
             ice_candidate = candidate_from_sdp(candidate_sdp)
@@ -216,14 +277,14 @@ class WebRTCManager:
         self.peers: Dict[str, WebRTCPeer] = {}
         self._lock = asyncio.Lock()
     
-    async def create_peer(self, session_id: str, peer_id: str) -> WebRTCPeer:
+    async def create_peer(self, session_id: str, peer_id: str, send_candidate_callback=None) -> WebRTCPeer:
         """Create a new peer connection"""
         async with self._lock:
             if peer_id in self.peers:
                 logger.warning(f"Peer {peer_id} already exists, closing old connection")
                 await self.close_peer(peer_id)
             
-            peer = WebRTCPeer(session_id, peer_id)
+            peer = WebRTCPeer(session_id, peer_id, send_candidate_callback)
             self.peers[peer_id] = peer
             logger.info(f"Created WebRTC peer {peer_id} for session {session_id}")
             return peer
@@ -261,6 +322,14 @@ class WebRTCManager:
         
         for peer_id in peers_to_close:
             await self.close_peer(peer_id)
+    
+    def get_active_session_ids(self) -> set:
+        """Get set of session IDs with active WebRTC connections"""
+        active_sessions = set()
+        for peer in self.peers.values():
+            if peer.pc and peer.pc.connectionState in ('connected', 'connecting', 'new'):
+                active_sessions.add(peer.session_id)
+        return active_sessions
     
     async def get_stats(self) -> dict:
         """Get statistics about active peers"""

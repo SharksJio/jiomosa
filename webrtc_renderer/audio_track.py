@@ -8,6 +8,7 @@ import time
 import subprocess
 import os
 import threading
+import collections
 from typing import Optional
 from fractions import Fraction
 from av import AudioFrame
@@ -38,13 +39,18 @@ class BrowserAudioTrack(AudioStreamTrack):
         self._start_time = time.time()
         self._audio_process: Optional[subprocess.Popen] = None
         self._audio_thread: Optional[threading.Thread] = None
-        self._audio_buffer = b''
         self._buffer_lock = threading.Lock()
         
         # Audio frame settings
         # Each frame is 20ms of audio (standard for WebRTC)
         self.samples_per_frame = int(sample_rate * 0.02)  # 960 samples at 48kHz
         self.bytes_per_frame = self.samples_per_frame * channels * 2  # 16-bit audio
+        
+        # Use a proper queue for audio frames (buffer up to 500ms = 25 frames)
+        self._audio_queue = collections.deque(maxlen=25)
+        
+        # Disable noise gate for now to ensure audio passes through
+        self._silence_threshold = 0  # Set to 0 to disable noise gating
         
         # Try to start audio capture
         self._start_audio_capture()
@@ -120,16 +126,38 @@ class BrowserAudioTrack(AudioStreamTrack):
         
         logger.info(f"Audio read loop started for session {self.session_id}")
         bytes_read = 0
+        
+        # Buffer for accumulating partial reads
+        partial_buffer = b''
             
         try:
             while self._running and self._audio_process.poll() is None:
+                # Read audio data
                 data = self._audio_process.stdout.read(self.bytes_per_frame)
                 if data:
-                    with self._buffer_lock:
-                        self._audio_buffer = data
-                    bytes_read += len(data)
+                    partial_buffer += data
+                    
+                    # Process complete frames
+                    while len(partial_buffer) >= self.bytes_per_frame:
+                        frame_data = partial_buffer[:self.bytes_per_frame]
+                        partial_buffer = partial_buffer[self.bytes_per_frame:]
+                        
+                        # Convert to numpy array for processing
+                        samples = np.frombuffer(frame_data, dtype=np.int16)
+                        
+                        # Apply noise gate - if audio is very quiet, replace with silence
+                        max_amplitude = np.max(np.abs(samples))
+                        if max_amplitude < self._silence_threshold:
+                            # Replace with pure silence to avoid noise
+                            samples = np.zeros_like(samples)
+                        
+                        with self._buffer_lock:
+                            self._audio_queue.append(samples.tobytes())
+                        
+                        bytes_read += len(frame_data)
+                    
                     if bytes_read % (self.bytes_per_frame * 50) == 0:  # Log every ~1 second
-                        logger.debug(f"Audio: read {bytes_read} bytes total")
+                        logger.debug(f"Audio: read {bytes_read} bytes total, queue size: {len(self._audio_queue)}")
         except Exception as e:
             logger.error(f"Audio read loop error: {e}")
         
@@ -146,17 +174,21 @@ class BrowserAudioTrack(AudioStreamTrack):
         # Calculate expected timestamp based on frame count
         pts = self._frame_count * self.samples_per_frame
         
-        # Get audio data from buffer or generate silence
+        # Get audio data from queue or generate silence
+        audio_data = None
         with self._buffer_lock:
-            audio_data = self._audio_buffer if self._audio_buffer else None
+            if self._audio_queue:
+                audio_data = self._audio_queue.popleft()
         
         if audio_data and len(audio_data) >= self.bytes_per_frame:
-            # Convert bytes to numpy array - keep as 1D interleaved for PyAV
+            # Convert bytes to numpy array
             samples = np.frombuffer(audio_data[:self.bytes_per_frame], dtype=np.int16)
-            # Reshape to (1, total_samples) for PyAV - interleaved stereo
+            # PyAV expects (1, total_samples) for packed stereo s16 format
+            # Audio is already interleaved LRLRLR, just reshape to (1, N)
             samples = samples.reshape((1, -1))
         else:
-            # Generate silent audio frame as fallback - interleaved format
+            # Generate silent audio frame as fallback
+            # Total samples = samples_per_frame * channels for interleaved stereo
             total_samples = self.samples_per_frame * self.channels
             samples = np.zeros((1, total_samples), dtype=np.int16)
         
@@ -183,7 +215,8 @@ class BrowserAudioTrack(AudioStreamTrack):
         # Log periodically
         if self._frame_count % 500 == 0:  # Every 10 seconds
             has_audio = self._audio_process is not None and self._audio_process.poll() is None
-            logger.debug(f"Audio track {self.session_id}: {self._frame_count} frames, capture active: {has_audio}")
+            queue_size = len(self._audio_queue)
+            logger.debug(f"Audio track {self.session_id}: {self._frame_count} frames, capture active: {has_audio}, queue: {queue_size}")
         
         return frame
     

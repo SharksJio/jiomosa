@@ -6,9 +6,6 @@ services:
       dockerfile: Dockerfile
     container_name: jiomosa-webrtc-renderer
     restart: unless-stopped
-    # GPU access for hardware acceleration (optional - falls back to software rendering)
-    devices:
-      - /dev/dri:/dev/dri
     environment:
       - DEBUG=false
       - WEBRTC_VIDEO_WIDTH=720
@@ -27,6 +24,8 @@ services:
       - "8000:8000"
     networks:
       - jiomosa-webrtc-network
+    # GPU acceleration: Use docker-compose.webrtc.linux.yml override on Linux
+    # Example: docker compose -f docker-compose.webrtc-no-volumes.yml -f docker-compose.webrtc.linux.yml up -d
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s

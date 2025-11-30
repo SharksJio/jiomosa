@@ -2,9 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#000000">
-    <title>Jiomosa Browser</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#1a1a1a">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>JioCloudApps Browser</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
@@ -16,31 +19,44 @@
             box-sizing: border-box;
         }
         
+        html {
+            height: 100%;
+            height: -webkit-fill-available;
+        }
+        
         body {
+            height: 100%;
+            min-height: 100vh;
+            min-height: -webkit-fill-available;
             font-family: 'Roboto', sans-serif;
             background: #000;
             overflow: hidden;
             -webkit-user-select: none;
             user-select: none;
+            -webkit-touch-callout: none;
         }
         
         #container {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
+            height: 100%;
+            min-height: 100vh;
+            min-height: -webkit-fill-available;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
         
         #toolbar {
             background: #1a1a1a;
             color: white;
             padding: 8px 12px;
+            padding-top: max(8px, env(safe-area-inset-top));
             display: flex;
             align-items: center;
             justify-content: space-between;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            z-index: 1000;
+            z-index: 100;
+            flex-shrink: 0;
+            min-height: 48px;
         }
         
         #toolbar .left {
@@ -60,10 +76,18 @@
             align-items: center;
             justify-content: center;
             transition: background 0.2s;
+            min-width: 40px;
+            min-height: 40px;
+            -webkit-tap-highlight-color: transparent;
         }
         
         #toolbar button:hover {
             background: rgba(255,255,255,0.1);
+        }
+        
+        #toolbar button:active {
+            background: rgba(255,255,255,0.2);
+            transform: scale(0.95);
         }
         
         #url-display {
@@ -114,6 +138,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            overflow: hidden;
+            touch-action: none;
         }
         
         #remoteVideo {
@@ -121,6 +147,7 @@
             height: 100%;
             object-fit: contain;
             background: #000;
+            touch-action: none;
         }
         
         #loading {
@@ -130,6 +157,11 @@
             transform: translate(-50%, -50%);
             text-align: center;
             color: white;
+            z-index: 10;
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
         }
         
         .spinner {
@@ -169,6 +201,8 @@
             cursor: pointer;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             transition: all 0.2s;
+            -webkit-tap-highlight-color: transparent;
+            backdrop-filter: blur(10px);
         }
         
         .control-btn:hover {
@@ -214,9 +248,19 @@
             width: 100%;
         }
         
+        .keyboard-active {
+            background: rgba(76, 175, 80, 0.9) !important;
+            box-shadow: 0 0 20px rgba(76, 175, 80, 0.5) !important;
+        }
+        
+        .keyboard-active .material-icons {
+            animation: pulse 2s infinite;
+        }
+        
         @media (max-width: 768px) {
             #url-display {
                 max-width: 150px;
+                font-size: 12px;
             }
             
             #controls {
@@ -227,6 +271,16 @@
             .control-btn {
                 width: 48px;
                 height: 48px;
+            }
+            
+            #toolbar {
+                padding: 6px 8px;
+            }
+            
+            #toolbar button {
+                padding: 6px;
+                min-width: 36px;
+                min-height: 36px;
             }
         }
     </style>
@@ -242,7 +296,10 @@
             </div>
             <div id="status">
                 <button id="audio-toggle" onclick="toggleAudio()" title="Toggle Audio">
-                    <span class="material-icons" id="audio-icon">volume_off</span>
+                    <span class="material-icons" id="toolbar-audio-icon">volume_off</span>
+                </button>
+                <button id="clear-session-btn" onclick="clearSession()" title="Clear Session & Start Fresh">
+                    <span class="material-icons">delete_sweep</span>
                 </button>
                 <div id="status-indicator"></div>
                 <span id="status-text">Connecting...</span>
@@ -252,25 +309,40 @@
         <div id="video-container">
             <video id="remoteVideo" autoplay playsinline muted></video>
             
-            <!-- Mobile keyboard input - invisible overlay -->
+            <!-- Mobile keyboard input - hidden by default, shown when keyboard button is pressed -->
+            <!-- Comprehensive attributes to prevent browser extensions and auto-fill interference -->
             <input type="text" 
                    id="mobile-input" 
                    inputmode="text"
+                   name="jiomosa-virtual-keyboard-input"
                    style="position: absolute; 
-                          bottom: 0; 
+                          bottom: -100px; 
                           left: 0; 
                           width: 1px; 
                           height: 1px; 
-                          opacity: 0.01; 
+                          opacity: 0; 
                           border: none; 
                           background: transparent;
                           color: transparent;
                           font-size: 16px;
-                          z-index: -1;"
+                          z-index: -1;
+                          pointer-events: none;
+                          caret-color: transparent;"
                    autocomplete="off" 
                    autocorrect="off" 
                    autocapitalize="off" 
-                   spellcheck="false">
+                   spellcheck="false"
+                   data-lpignore="true"
+                   data-1p-ignore="true"
+                   data-bwignore="true"
+                   data-dashlane-ignore="true"
+                   data-lastpass-ignore="true"
+                   data-bitwarden-ignore="true"
+                   data-form-type="other"
+                   data-private="true"
+                   role="presentation"
+                   tabindex="-1"
+                   readonly>
             
             <div id="loading">
                 <div class="spinner"></div>
@@ -280,7 +352,7 @@
         
         <div id="controls">
             <button class="control-btn" onclick="toggleAudio()" title="Toggle Audio" id="audio-btn">
-                <span class="material-icons" id="audio-icon">volume_up</span>
+                <span class="material-icons" id="control-audio-icon">volume_off</span>
             </button>
             <button class="control-btn" onclick="toggleKeyboard()" title="Keyboard">
                 <span class="material-icons">keyboard</span>
@@ -302,9 +374,14 @@
         const WEBRTC_SERVER = '';  // Use relative URLs to go through the webapp proxy
         const TARGET_URL = '{{ url }}';
         
+        // Session caching info from server
+        const EXISTING_SESSION = {{ existing_session | tojson if existing_session else 'null' }};
+        let userSessionId = EXISTING_SESSION ? EXISTING_SESSION.id : null;
+        
         let client = null;
         let sessionId = null;
         let currentViewport = null;
+        let keyboardActive = false;  // Track keyboard state - off by default
         
         // Detect optimal viewport size based on window
         function getOptimalViewport() {
@@ -371,6 +448,143 @@
             };
         }
         
+        // Register session with user account for caching
+        async function registerUserSession(rendererSessionId) {
+            try {
+                const response = await fetch('/api/user/sessions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: TARGET_URL,
+                        renderer_session_id: rendererSessionId
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    userSessionId = data.session.id;
+                    console.log('✅ Session registered with user account:', userSessionId);
+                }
+            } catch (e) {
+                console.error('Failed to register user session:', e);
+            }
+        }
+        
+        // Connect to WebRTC stream
+        async function connectWebRTC() {
+            updateStatus('connecting', 'Connecting WebRTC...');
+            client = new JiomosaWebRTCClient(WEBRTC_SERVER, sessionId);
+            
+            client.onStatus((state, message) => {
+                updateStatus(state, message);
+                if (state === 'connected') {
+                    document.getElementById('loading').style.display = 'none';
+                }
+            });
+            
+            client.onError((message, error) => {
+                showError(message);
+            });
+            
+            const videoElement = document.getElementById('remoteVideo');
+            await client.connect(videoElement);
+            
+            // Start keep-alive
+            client.startKeepAlive();
+            
+            // Setup input handlers
+            setupInputHandlers();
+            
+            // Handle window resize
+            window.addEventListener('resize', debounce(handleWindowResize, 1000));
+            
+            // Show optimization info
+            console.log('🎮 WebRTC streaming started with optimizations');
+            console.log('💡 Tip: Resize window to see adaptive resolution');
+        }
+        
+        // Clear session and start fresh
+        async function clearSession() {
+            if (!confirm('Clear this session and start fresh? You will lose the current browser state.')) {
+                return;
+            }
+            
+            updateStatus('connecting', 'Clearing session...');
+            
+            try {
+                // Close WebRTC connection
+                if (client) {
+                    client.disconnect();
+                    client = null;
+                }
+                
+                // Close renderer session
+                if (sessionId) {
+                    try {
+                        await fetch(`${WEBRTC_SERVER}/api/session/${sessionId}/close`, {
+                            method: 'POST'
+                        });
+                    } catch (e) {
+                        console.error('Failed to close renderer session:', e);
+                    }
+                }
+                
+                // Clear user session from database
+                if (userSessionId) {
+                    try {
+                        await fetch(`/api/user/sessions/${userSessionId}`, {
+                            method: 'DELETE'
+                        });
+                    } catch (e) {
+                        console.error('Failed to clear user session:', e);
+                    }
+                }
+                
+                // Reset state
+                sessionId = null;
+                userSessionId = null;
+                
+                // Show loading
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('loading').querySelector('p').textContent = 'Starting fresh session...';
+                
+                // Create new session
+                const viewport = getOptimalViewport();
+                currentViewport = viewport;
+                
+                const response = await fetch(`${WEBRTC_SERVER}/api/session/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        width: viewport.width,
+                        height: viewport.height
+                    })
+                });
+                
+                const data = await response.json();
+                sessionId = data.session_id;
+                
+                // Load URL
+                updateStatus('connecting', 'Loading website...');
+                await fetch(`${WEBRTC_SERVER}/api/session/${sessionId}/load`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: TARGET_URL })
+                });
+                
+                // Register new session
+                await registerUserSession(sessionId);
+                
+                // Connect WebRTC
+                await connectWebRTC();
+                
+                console.log('✅ Session cleared and recreated');
+                
+            } catch (error) {
+                console.error('Failed to clear session:', error);
+                showError('Failed to clear session: ' + error.message);
+            }
+        }
+        
         // Initialize
         async function init() {
             try {
@@ -385,7 +599,39 @@
                 console.log('  - Screen:', `${window.screen.width}x${window.screen.height}`);
                 console.log('  - Window:', `${window.innerWidth}x${window.innerHeight}`);
                 
-                // Create session with optimal viewport
+                // Check if we have an existing cached session
+                let tryExistingSession = false;
+                if (EXISTING_SESSION && EXISTING_SESSION.renderer_session_id) {
+                    console.log('📦 Found cached session:', EXISTING_SESSION.renderer_session_id);
+                    tryExistingSession = true;
+                }
+                
+                if (tryExistingSession) {
+                    // Try to reconnect to existing renderer session
+                    updateStatus('connecting', 'Reconnecting to cached session...');
+                    try {
+                        const infoResponse = await fetch(`${WEBRTC_SERVER}/api/session/${EXISTING_SESSION.renderer_session_id}/info`);
+                        if (infoResponse.ok) {
+                            const infoData = await infoResponse.json();
+                            if (infoData.status === 'active') {
+                                console.log('✅ Cached session is still active');
+                                sessionId = EXISTING_SESSION.renderer_session_id;
+                                
+                                // Update session access time
+                                await registerUserSession(sessionId);
+                                
+                                // Connect to existing session
+                                updateStatus('connecting', 'Connecting WebRTC to cached session...');
+                                await connectWebRTC();
+                                return;
+                            }
+                        }
+                    } catch (e) {
+                        console.log('⚠️ Cached session check failed, creating new session:', e);
+                    }
+                }
+                
+                // Create new session with optimal viewport
                 updateStatus('connecting', `Creating optimized session (${viewport.width}x${viewport.height}@${targetFps}fps)...`);
                 const response = await fetch(`${WEBRTC_SERVER}/api/session/create`, {
                     method: 'POST',
@@ -412,36 +658,11 @@
                 
                 console.log('URL loaded');
                 
+                // Register this session with user's account for caching
+                await registerUserSession(sessionId);
+                
                 // Connect WebRTC
-                updateStatus('connecting', 'Connecting WebRTC...');
-                client = new JiomosaWebRTCClient(WEBRTC_SERVER, sessionId);
-                
-                client.onStatus((state, message) => {
-                    updateStatus(state, message);
-                    if (state === 'connected') {
-                        document.getElementById('loading').style.display = 'none';
-                    }
-                });
-                
-                client.onError((message, error) => {
-                    showError(message);
-                });
-                
-                const videoElement = document.getElementById('remoteVideo');
-                await client.connect(videoElement);
-                
-                // Start keep-alive
-                client.startKeepAlive();
-                
-                // Setup input handlers
-                setupInputHandlers();
-                
-                // Handle window resize
-                window.addEventListener('resize', debounce(handleWindowResize, 1000));
-                
-                // Show optimization info
-                console.log('🎮 WebRTC streaming started with optimizations');
-                console.log('💡 Tip: Resize window to see adaptive resolution');
+                await connectWebRTC();
                 
             } catch (error) {
                 console.error('Initialization error:', error);
@@ -491,6 +712,10 @@
                         body: JSON.stringify({ url: TARGET_URL })
                     });
                     
+                    // Update user session with new renderer session ID
+                    sessionId = newSessionId;
+                    await registerUserSession(newSessionId);
+                    
                     // Reconnect WebRTC
                     client = new JiomosaWebRTCClient(WEBRTC_SERVER, newSessionId);
                     client.onStatus((state, message) => {
@@ -508,7 +733,6 @@
                     client.startKeepAlive();
                     
                     // Update current viewport
-                    sessionId = newSessionId;
                     currentViewport = newViewport;
                     
                     console.log('✅ Viewport updated successfully');
@@ -577,14 +801,17 @@
                     }
                 });
                 
-                // Prevent input from losing focus
+                // Prevent input from losing focus only when keyboard is active
                 mobileInput.addEventListener('blur', () => {
-                    console.log('Input lost focus - attempting refocus');
-                    setTimeout(() => {
-                        if (document.activeElement !== mobileInput) {
-                            mobileInput.focus();
-                        }
-                    }, 100);
+                    // Only refocus if keyboard mode is active
+                    if (keyboardActive) {
+                        console.log('Input lost focus - refocusing (keyboard active)');
+                        setTimeout(() => {
+                            if (keyboardActive && document.activeElement !== mobileInput) {
+                                mobileInput.focus();
+                            }
+                        }, 100);
+                    }
                 });
                 
                 // Clear the input periodically to prevent it from getting too long
@@ -597,11 +824,8 @@
                     }
                 }, 2000);
                 
-                // Initial focus for mobile
-                setTimeout(() => {
-                    console.log('Initial mobile input focus');
-                    mobileInput.focus();
-                }, 1000);
+                // NO initial focus - keyboard only opens when user presses keyboard button
+                console.log('📱 Mobile keyboard ready - press keyboard button to activate');
             }
             
             // Click/Touch
@@ -616,11 +840,10 @@
                 client.sendClick(x, y);
                 console.log('Click sent:', {x, y});
                 
-                // Focus mobile input on mobile to trigger keyboard
-                if (isMobile) {
-                    console.log('Focusing mobile input after click');
+                // Only focus input if keyboard is already active
+                if (isMobile && keyboardActive) {
                     setTimeout(() => mobileInput.focus(), 50);
-                } else {
+                } else if (!isMobile) {
                     video.focus();
                 }
             });
@@ -628,7 +851,12 @@
             // Touch events for mobile
             video.addEventListener('touchstart', (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 const touch = e.touches[0];
+                
+                // Initialize touch position for scroll tracking
+                touchStartY = touch.clientY;
+                
                 const rect = video.getBoundingClientRect();
                 // Use actual viewport dimensions
                 const scaleX = currentViewport.width / rect.width;
@@ -639,35 +867,37 @@
                 client.sendClick(x, y);
                 console.log('Touch sent:', {x, y});
                 
-                // Auto-focus mobile input on touch - use longer delay for reliability
-                if (isMobile) {
-                    console.log('Focusing mobile input after touch');
-                    setTimeout(() => {
-                        mobileInput.focus();
-                        // Try to trigger keyboard
-                        mobileInput.click();
-                    }, 150);
+                // Only focus input if keyboard mode is already active
+                if (isMobile && keyboardActive) {
+                    setTimeout(() => mobileInput.focus(), 150);
                 }
-            });
+            }, { passive: false });
+            
+            // Handle touch scrolling and prevent page scrolling
+            let touchStartY = 0;
+            video.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Send scroll events to remote browser
+                if (touchStartY !== 0) {
+                    const touch = e.touches[0];
+                    const deltaY = touchStartY - touch.clientY;
+                    touchStartY = touch.clientY;
+                    client.sendScroll(deltaY * 2); // Amplify scroll sensitivity
+                }
+            }, { passive: false });
+            
+            // Prevent touchend from causing issues
+            video.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            }, { passive: false });
             
             // Scroll
             video.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 client.sendScroll(e.deltaY);
-            });
-            
-            // Touch scroll
-            let touchStartY = 0;
-            video.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                const touch = e.touches[0];
-                const deltaY = touchStartY - touch.clientY;
-                touchStartY = touch.clientY;
-                client.sendScroll(deltaY);
-            });
-            
-            video.addEventListener('touchstart', (e) => {
-                touchStartY = e.touches[0].clientY;
             });
             
             // Keyboard support for desktop
@@ -723,15 +953,18 @@
         }
         
         // Toggle audio mute/unmute
-        let audioMuted = false;
+        let audioMuted = true; // Start with audio muted (default state)
         function toggleAudio() {
             const video = document.getElementById('remoteVideo');
-            const audioIcon = document.getElementById('audio-icon');
+            const toolbarAudioIcon = document.getElementById('toolbar-audio-icon');
+            const controlAudioIcon = document.getElementById('control-audio-icon');
             
             audioMuted = !audioMuted;
             video.muted = audioMuted;
             
-            audioIcon.textContent = audioMuted ? 'volume_off' : 'volume_up';
+            const iconText = audioMuted ? 'volume_off' : 'volume_up';
+            toolbarAudioIcon.textContent = iconText;
+            controlAudioIcon.textContent = iconText;
             
             // Visual feedback
             const indicator = document.getElementById('status-text');
@@ -745,15 +978,36 @@
         // Toggle keyboard visibility on mobile
         function toggleKeyboard() {
             const mobileInput = document.getElementById('mobile-input');
-            console.log('Keyboard button clicked - forcing focus');
-            mobileInput.focus();
-            // Additional trigger for stubborn keyboards
-            mobileInput.click();
-            // Show brief visual feedback
-            const indicator = document.getElementById('status-text');
-            const oldText = indicator.textContent;
-            indicator.textContent = '⌨️ Keyboard';
-            setTimeout(() => indicator.textContent = oldText, 1000);
+            const keyboardBtn = document.querySelector('#controls button[title="Keyboard"]');
+            keyboardActive = !keyboardActive;
+            
+            if (keyboardActive) {
+                // Enable keyboard
+                mobileInput.removeAttribute('readonly');
+                mobileInput.style.pointerEvents = 'auto';
+                keyboardBtn.classList.add('keyboard-active');
+                console.log('⌨️ Keyboard activated');
+                mobileInput.focus();
+                mobileInput.click();
+                // Visual feedback
+                const indicator = document.getElementById('status-text');
+                indicator.textContent = '⌨️ Keyboard ON';
+            } else {
+                // Disable keyboard
+                mobileInput.blur();
+                mobileInput.setAttribute('readonly', 'true');
+                mobileInput.style.pointerEvents = 'none';
+                keyboardBtn.classList.remove('keyboard-active');
+                console.log('⌨️ Keyboard deactivated');
+                // Visual feedback
+                const indicator = document.getElementById('status-text');
+                indicator.textContent = '⌨️ Keyboard OFF';
+                setTimeout(() => {
+                    if (!keyboardActive) {
+                        indicator.textContent = 'Connected';
+                    }
+                }, 1000);
+            }
         }
         
         function updateStatus(state, message) {
@@ -778,20 +1032,7 @@
             location.reload();
         }
         
-        function toggleAudio() {
-            const video = document.getElementById('remoteVideo');
-            const audioIcon = document.getElementById('audio-icon');
-            
-            if (video.muted) {
-                video.muted = false;
-                audioIcon.textContent = 'volume_up';
-                console.log('🔊 Audio enabled');
-            } else {
-                video.muted = true;
-                audioIcon.textContent = 'volume_off';
-                console.log('🔇 Audio muted');
-            }
-        }
+
         
         function goBack() {
             if (client) {
@@ -807,6 +1048,21 @@
             location.reload();
         }
         
+        // Handle page visibility changes (mobile app switching, tab switching)
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                console.log('📱 Page hidden - pausing keep-alive');
+                if (client) {
+                    client.pauseKeepAlive?.();
+                }
+            } else {
+                console.log('📱 Page visible - resuming keep-alive');
+                if (client) {
+                    client.resumeKeepAlive?.();
+                }
+            }
+        });
+        
         // Cleanup on page unload
         window.addEventListener('beforeunload', () => {
             if (client) {
@@ -814,6 +1070,14 @@
             }
             if (sessionId) {
                 navigator.sendBeacon(`${WEBRTC_SERVER}/api/session/${sessionId}`, 'DELETE');
+            }
+        });
+        
+        // Handle errors gracefully
+        window.addEventListener('error', (e) => {
+            console.error('Global error:', e.error);
+            if (e.error.message.includes('WebRTC') || e.error.message.includes('connection')) {
+                showError('Connection error occurred. Please refresh to reconnect.');
             }
         });
         

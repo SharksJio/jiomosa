@@ -1,0 +1,10 @@
+# Linux-specific override for GPU hardware acceleration
+# Usage: docker compose -f docker-compose.webrtc.yml -f docker-compose.webrtc.linux.yml up -d
+#
+# This file adds /dev/dri device passthrough for GPU-accelerated video encoding
+# Only use this on Linux hosts with Intel/AMD integrated graphics or compatible GPUs
+
+services:
+  webrtc-renderer:
+    devices:
+      - /dev/dri:/dev/dri

@@ -477,15 +477,20 @@ class BrowserPool:
     
     async def cleanup_stale_sessions(self):
         """Remove sessions that have been inactive for too long"""
+        from webrtc_manager import webrtc_manager
+        
         now = datetime.now()
         timeout_delta = timedelta(seconds=settings.browser_session_timeout)
+        
+        # Get sessions with active WebRTC streaming - don't clean these up
+        active_streaming_sessions = webrtc_manager.get_active_session_ids()
         
         # Find stale sessions without holding the lock
         stale_sessions = []
         async with self._lock:
             stale_sessions = [
                 session_id for session_id, timestamp in self.session_timestamps.items()
-                if now - timestamp > timeout_delta
+                if now - timestamp > timeout_delta and session_id not in active_streaming_sessions
             ]
         
         # Close sessions one by one (close_session acquires its own lock)
