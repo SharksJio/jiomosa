@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Jiomosa</title>
+    <style>
+    * {
+        margin: 0;
+        padding: 0;
+        -moz-box-sizing: border-box;
+        box-sizing: border-box;
+    }
+    html, body {
+        width: 240px;
+        height: 320px;
+        overflow: hidden;
+        font-family: Arial, sans-serif;
+        font-size: 12px;
+        background: #1a1a2e;
+        color: #fff;
+    }
+    .container {
+        width: 240px;
+        height: 320px;
+        background: #1a1a2e;
+    }
+    .header {
+        width: 240px;
+        height: 36px;
+        background: #0f0f1a;
+        text-align: center;
+        padding: 6px;
+        border-bottom: 1px solid #e94560;
+    }
+    .title {
+        font-size: 14px;
+        font-weight: bold;
+        color: #e94560;
+    }
+    .subtitle {
+        font-size: 8px;
+        color: #888;
+    }
+    .grid {
+        width: 240px;
+        padding: 8px;
+    }
+    .row {
+        width: 224px;
+        height: 70px;
+        margin-bottom: 4px;
+    }
+    .row:after {
+        content: "";
+        display: block;
+        clear: both;
+    }
+    .app {
+        float: left;
+        width: 70px;
+        height: 66px;
+        margin: 0 2px;
+        text-align: center;
+        padding: 6px 2px;
+        background: #252540;
+        border: 2px solid #353560;
+        -moz-border-radius: 6px;
+        border-radius: 6px;
+    }
+    .app.sel {
+        background: #3a2040;
+        border-color: #e94560;
+    }
+    .icon {
+        display: block;
+        width: 32px;
+        height: 32px;
+        margin: 0 auto 4px auto;
+        line-height: 32px;
+        font-size: 11px;
+        font-weight: bold;
+        background: #e94560;
+        color: #fff;
+        -moz-border-radius: 6px;
+        border-radius: 6px;
+    }
+    .g { background: #4285f4; }
+    .y { background: #ff0000; }
+    .t { background: #1da1f2; }
+    .f { background: #1877f2; }
+    .w { background: #000; }
+    .n { background: #0d652d; }
+    .we { background: #f05514; }
+    .r { background: #ff4500; }
+    .u { background: #666; }
+    .name {
+        font-size: 9px;
+        color: #ccc;
+        overflow: hidden;
+    }
+    .footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 240px;
+        height: 44px;
+        background: #0f0f1a;
+        padding: 4px;
+        text-align: center;
+        font-size: 8px;
+        color: #666;
+        border-top: 1px solid #333;
+    }
+    .k {
+        display: inline-block;
+        background: #333;
+        color: #e94560;
+        padding: 1px 4px;
+        margin: 0 1px;
+        -moz-border-radius: 2px;
+        border-radius: 2px;
+        font-weight: bold;
+    }
+    #debug {
+        position: absolute;
+        top: 38px;
+        left: 4px;
+        font-size: 8px;
+        color: #ff0;
+        background: rgba(0,0,0,0.8);
+        padding: 2px 4px;
+        z-index: 999;
+    }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="title">JIOMOSA</div>
+            <div class="subtitle">Cloud Browser</div>
+        </div>
+
+        <div id="debug"></div>
+
+        <div class="grid" id="grid">
+            <div class="row">
+                <div class="app sel" data-i="0" data-u="https://duckduckgo.com">
+                    <span class="icon g">DD</span>
+                    <span class="name">DuckDuckGo</span>
+                </div>
+                <div class="app" data-i="1" data-a="youtube">
+                    <span class="icon y">YT</span>
+                    <span class="name">YouTube</span>
+                </div>
+                <div class="app" data-i="2" data-u="https://mobile.twitter.com">
+                    <span class="icon t">X</span>
+                    <span class="name">Twitter</span>
+                </div>
+            </div>
+            <div class="row">
+                <div class="app" data-i="3" data-u="https://m.facebook.com">
+                    <span class="icon f">fb</span>
+                    <span class="name">Facebook</span>
+                </div>
+                <div class="app" data-i="4" data-u="https://www.wikipedia.org">
+                    <span class="icon w">W</span>
+                    <span class="name">Wikipedia</span>
+                </div>
+                <div class="app" data-i="5" data-u="https://news.google.com">
+                    <span class="icon n">N</span>
+                    <span class="name">News</span>
+                </div>
+            </div>
+            <div class="row">
+                <div class="app" data-i="6" data-u="https://weather.com">
+                    <span class="icon we">WX</span>
+                    <span class="name">Weather</span>
+                </div>
+                <div class="app" data-i="7" data-u="https://www.reddit.com">
+                    <span class="icon r">R</span>
+                    <span class="name">Reddit</span>
+                </div>
+                <div class="app" data-i="8" data-u="">
+                    <span class="icon u">URL</span>
+                    <span class="name">Custom</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <div><span class="k">2</span>Up <span class="k">4</span>Left <span class="k">6</span>Right <span class="k">8</span>Down</div>
+            <div style="margin-top:2px"><span class="k">5</span> or <span class="k">OK</span> to Select | <span class="k">#</span> Settings</div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        var idx = 0;
+        var apps = document.querySelectorAll('.app');
+        var server = localStorage.getItem('jiomosa_server') || '';
+        var debug = document.getElementById('debug');
+
+        function log(msg) {
+            debug.textContent = msg;
+            setTimeout(function() { debug.textContent = ''; }, 3000);
+        }
+
+        function sel() {
+            for (var i = 0; i < apps.length; i++) {
+                apps[i].className = (i === idx) ? 'app sel' : 'app';
+            }
+            localStorage.setItem('jiomosa_idx', idx);
+        }
+
+        function nav(d) {
+            var old = idx;
+            if (d === 'u' && idx >= 3) idx -= 3;
+            else if (d === 'd' && idx < 6) idx += 3;
+            else if (d === 'l' && idx % 3 > 0) idx--;
+            else if (d === 'r' && idx % 3 < 2 && idx < 8) idx++;
+            if (idx !== old) sel();
+        }
+
+        function go() {
+            var app = apps[idx];
+            var url = app.getAttribute('data-u');
+            var nativeApp = app.getAttribute('data-a');
+            
+            // Handle native apps (YouTube, etc.)
+            if (nativeApp === 'youtube') {
+                log('Opening YouTube');
+                window.location.href = 'youtube.html';
+                return;
+            }
+            
+            log('Opening: ' + (url || 'custom'));
+            if (!url) {
+                url = prompt('Enter URL:', 'https://');
+                if (!url || url === 'https://') return;
+            }
+            if (!server) {
+                server = prompt('Server IP:Port:', 'http://10.172.161.93:5000');
+                if (server) localStorage.setItem('jiomosa_server', server);
+            }
+            if (!server) return;
+            localStorage.setItem('jiomosa_url', url);
+            window.location.href = 'browser.html';
+        }
+
+        function settings() {
+            var s = prompt('Server URL:', server || 'http://10.172.161.93:5000');
+            if (s) {
+                server = s;
+                localStorage.setItem('jiomosa_server', s);
+                alert('Server: ' + s);
+            }
+        }
+
+        var saved = localStorage.getItem('jiomosa_idx');
+        if (saved) idx = parseInt(saved, 10) || 0;
+        sel();
+
+        document.addEventListener('keydown', function(e) {
+            var k = e.key || '';
+            var c = e.keyCode || e.which;
+            
+            log('Key:' + k + ' Code:' + c);
+
+            // D-pad navigation
+            if (k === 'ArrowUp' || c === 38) { nav('u'); e.preventDefault(); return; }
+            if (k === 'ArrowDown' || c === 40) { nav('d'); e.preventDefault(); return; }
+            if (k === 'ArrowLeft' || c === 37) { nav('l'); e.preventDefault(); return; }
+            if (k === 'ArrowRight' || c === 39) { nav('r'); e.preventDefault(); return; }
+
+            // Number key navigation
+            if (k === '2' || c === 50 || c === 98) { nav('u'); e.preventDefault(); return; }
+            if (k === '8' || c === 56 || c === 104) { nav('d'); e.preventDefault(); return; }
+            if (k === '4' || c === 52 || c === 100) { nav('l'); e.preventDefault(); return; }
+            if (k === '6' || c === 54 || c === 102) { nav('r'); e.preventDefault(); return; }
+
+            // Select/Enter - many possible keycodes for D-pad center
+            // Including MicrophoneToggle (key sent by some KaiOS D-pad center)
+            if (k === 'Enter' || k === '5' || k === 'Accept' || k === 'SoftRight' ||
+                k === 'MicrophoneToggle' || k === 'Call' || k === 'GoBack' ||
+                c === 13 || c === 53 || c === 101 || c === 32 || c === 160 || 
+                c === 23 || c === 66 || c === 99 || c === 0) {
+                go();
+                e.preventDefault();
+                return;
+            }
+
+            // Settings
+            if (k === '#' || c === 163 || c === 35) {
+                settings();
+                e.preventDefault();
+                return;
+            }
+        }, true);
+
+        // Also handle click/tap on apps
+        for (var i = 0; i < apps.length; i++) {
+            apps[i].addEventListener('click', function(e) {
+                var newIdx = parseInt(this.getAttribute('data-i'), 10);
+                idx = newIdx;
+                sel();
+                go();
+            }, false);
+        }
+    })();
+    </script>
+</body>
+</html>

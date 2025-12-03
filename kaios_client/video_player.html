@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=240, height=320, user-scalable=no">
+    <title>Video Player</title>
+    <style>
+    * { margin: 0; padding: 0; }
+    html, body { width: 240px; height: 320px; overflow: hidden; font-family: Arial, sans-serif; background: #000; color: #fff; }
+    .container { width: 240px; height: 320px; position: relative; }
+    
+    /* Header */
+    .header { width: 240px; height: 24px; background: #1a1a1a; padding: 4px 8px; line-height: 16px; }
+    .header .title { font-size: 10px; color: #fff; float: left; max-width: 200px; overflow: hidden; }
+    .header .fs-btn { float: right; font-size: 12px; color: #fff; cursor: pointer; padding: 0 4px; }
+    
+    /* Video area */
+    .video-container { width: 240px; height: 180px; background: #000; position: relative; }
+    .video-container video { width: 100%; height: 100%; background: #000; }
+    
+    /* Loading overlay */
+    .loading { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); text-align: center; padding-top: 60px; }
+    .loading.hidden { display: none; }
+    .spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid #333; border-top: 3px solid #ff0000; border-radius: 50%; -moz-animation: spin 1s linear infinite; animation: spin 1s linear infinite; }
+    @-moz-keyframes spin { 0% { -moz-transform: rotate(0deg); } 100% { -moz-transform: rotate(360deg); } }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .loading-text { margin-top: 10px; font-size: 10px; color: #aaa; }
+    .loading-progress { width: 80%; height: 4px; background: #333; margin: 8px auto 0 auto; border-radius: 2px; overflow: hidden; }
+    .loading-progress-bar { height: 100%; background: #ff0000; width: 0%; }
+    
+    /* Info panel */
+    .info-panel { width: 240px; height: 68px; background: #1a1a1a; padding: 6px 8px; overflow: hidden; }
+    .info-title { font-size: 11px; font-weight: bold; color: #fff; margin-bottom: 4px; overflow: hidden; }
+    .info-channel { font-size: 9px; color: #aaa; margin-bottom: 4px; }
+    .info-stats { font-size: 8px; color: #666; }
+    
+    /* Controls */
+    .controls { width: 240px; height: 28px; background: #282828; padding: 4px 8px; }
+    .progress-bar { width: 224px; height: 4px; background: #404040; border-radius: 2px; margin: 0 auto 4px auto; }
+    .progress-fill { height: 100%; background: #ff0000; border-radius: 2px; width: 0%; }
+    .time-display { font-size: 9px; color: #aaa; text-align: center; }
+    
+    /* Controls bar */
+    .controls-bar { width: 240px; height: 20px; background: #1a1a1a; padding: 4px 6px; font-size: 7px; color: #666; text-align: center; }
+    
+    /* Play/Pause indicator */
+    .play-indicator { position: absolute; top: 50%; left: 50%; margin-left: -24px; margin-top: -24px; width: 48px; height: 48px; background: rgba(0,0,0,0.7); border-radius: 24px; text-align: center; line-height: 48px; opacity: 0; }
+    .play-indicator.show { opacity: 1; }
+    .play-indicator .icon { font-size: 20px; color: #fff; }
+    
+    /* Fullscreen mode */
+    body.fullscreen { width: 320px; height: 240px; }
+    body.fullscreen .container { 
+        width: 320px; 
+        height: 240px; 
+        position: fixed;
+        top: 0;
+        left: 0;
+        -moz-transform: rotate(90deg) translateY(-240px);
+        -moz-transform-origin: top left;
+        transform: rotate(90deg) translateY(-240px);
+        transform-origin: top left;
+    }
+    body.fullscreen .header { display: none; }
+    body.fullscreen .video-container { width: 320px; height: 240px; }
+    body.fullscreen .info-panel { display: none; }
+    body.fullscreen .controls { 
+        position: absolute; 
+        bottom: 20px; 
+        left: 0; 
+        width: 320px; 
+        background: rgba(0,0,0,0.7); 
+    }
+    body.fullscreen .controls .progress-bar { width: 300px; }
+    body.fullscreen .controls-bar { 
+        position: absolute; 
+        bottom: 0; 
+        left: 0; 
+        width: 320px; 
+        background: rgba(0,0,0,0.7); 
+    }
+    body.fullscreen .loading { padding-top: 90px; }
+    body.fullscreen .play-indicator { margin-top: -24px; }
+    
+    /* Fullscreen icon in video */
+    .fs-icon { 
+        position: absolute; 
+        bottom: 8px; 
+        right: 8px; 
+        width: 24px; 
+        height: 24px; 
+        background: rgba(0,0,0,0.6); 
+        border-radius: 4px; 
+        text-align: center; 
+        line-height: 24px; 
+        font-size: 14px; 
+        color: #fff; 
+        cursor: pointer;
+    }
+    body.fullscreen .fs-icon { bottom: 56px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="title" id="headerTitle">Loading...</div>
+            <div class="fs-btn" id="fsBtn">⛶</div>
+        </div>
+        
+        <div class="video-container" id="videoContainer">
+            <video id="video" playsinline webkit-playsinline></video>
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <div class="loading-text" id="loadingText">Preparing video...</div>
+                <div class="loading-progress">
+                    <div class="loading-progress-bar" id="loadingProgress"></div>
+                </div>
+            </div>
+            <div class="play-indicator" id="playIndicator">
+                <span class="icon" id="playIcon">▶</span>
+            </div>
+            <div class="fs-icon" id="fsIcon">⛶</div>
+        </div>
+        
+        <div class="info-panel">
+            <div class="info-title" id="videoTitle">-</div>
+            <div class="info-channel" id="videoChannel">-</div>
+            <div class="info-stats" id="videoStats">-</div>
+        </div>
+        
+        <div class="controls">
+            <div class="progress-bar" id="progressBar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="time-display" id="timeDisplay">0:00 / 0:00</div>
+        </div>
+        
+        <div class="controls-bar" id="controlsBar">5:Play | 4/6:Seek | *:Fullscreen | 0:Back</div>
+    </div>
+    
+    <script>
+    (function() {
+        // Get video ID from URL parameters
+        var params = {};
+        var search = window.location.search.substring(1);
+        if (search) {
+            var parts = search.split('&');
+            for (var i = 0; i < parts.length; i++) {
+                var pair = parts[i].split('=');
+                params[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1] || '');
+            }
+        }
+        
+        var videoId = params.v || params.id || '';
+        if (!videoId) {
+            document.getElementById('loadingText').textContent = 'No video ID provided';
+            document.getElementById('loadingText').style.color = '#ff4444';
+            return;
+        }
+        
+        // Server URL
+        var server = localStorage.getItem('jiomosa_server');
+        if (!server) {
+            server = window.location.protocol + '//' + window.location.host;
+        }
+        
+        // Elements
+        var video = document.getElementById('video');
+        var loading = document.getElementById('loading');
+        var loadingText = document.getElementById('loadingText');
+        var loadingProgress = document.getElementById('loadingProgress');
+        var playIndicator = document.getElementById('playIndicator');
+        var playIcon = document.getElementById('playIcon');
+        var headerTitle = document.getElementById('headerTitle');
+        var videoTitle = document.getElementById('videoTitle');
+        var videoChannel = document.getElementById('videoChannel');
+        var videoStats = document.getElementById('videoStats');
+        var timeDisplay = document.getElementById('timeDisplay');
+        var progressFill = document.getElementById('progressFill');
+        
+        var isPlaying = false;
+        var videoReady = false;
+        var checkInterval = null;
+        var seekAmount = 10; // seconds
+        var isFullscreen = false;
+        
+        // Fullscreen elements
+        var fsBtn = document.getElementById('fsBtn');
+        var fsIcon = document.getElementById('fsIcon');
+        var controlsBar = document.getElementById('controlsBar');
+        
+        function toggleFullscreen() {
+            isFullscreen = !isFullscreen;
+            if (isFullscreen) {
+                document.body.className = 'fullscreen';
+                controlsBar.innerHTML = '5:Play | 4/6:Seek | *:Exit FS | 0:Back';
+            } else {
+                document.body.className = '';
+                controlsBar.innerHTML = '5:Play | 4/6:Seek | *:Fullscreen | 0:Back';
+            }
+            showPlayIndicator(isFullscreen ? '⛶' : '▢');
+        }
+        
+        // Click handlers for fullscreen buttons
+        if (fsBtn) {
+            fsBtn.onclick = function() { toggleFullscreen(); };
+        }
+        if (fsIcon) {
+            fsIcon.onclick = function() { toggleFullscreen(); };
+        }
+        
+        function formatTime(seconds) {
+            if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
+            var mins = Math.floor(seconds / 60);
+            var secs = Math.floor(seconds % 60);
+            return mins + ':' + (secs < 10 ? '0' : '') + secs;
+        }
+        
+        function formatViews(views) {
+            if (!views) return '';
+            if (views >= 1000000000) return (views / 1000000000).toFixed(1) + 'B views';
+            if (views >= 1000000) return (views / 1000000).toFixed(1) + 'M views';
+            if (views >= 1000) return (views / 1000).toFixed(1) + 'K views';
+            return views + ' views';
+        }
+        
+        function showPlayIndicator(icon) {
+            playIcon.textContent = icon;
+            playIndicator.className = 'play-indicator show';
+            setTimeout(function() {
+                playIndicator.className = 'play-indicator';
+            }, 500);
+        }
+        
+        function updateProgress() {
+            if (video.duration && isFinite(video.duration)) {
+                var percent = (video.currentTime / video.duration) * 100;
+                progressFill.style.width = percent + '%';
+                timeDisplay.textContent = formatTime(video.currentTime) + ' / ' + formatTime(video.duration);
+            }
+        }
+        
+        function togglePlayPause() {
+            if (!videoReady) return;
+            
+            if (video.paused) {
+                video.play();
+                isPlaying = true;
+                showPlayIndicator('▶');
+            } else {
+                video.pause();
+                isPlaying = false;
+                showPlayIndicator('❚❚');
+            }
+        }
+        
+        function seek(delta) {
+            if (!videoReady) return;
+            var newTime = video.currentTime + delta;
+            if (newTime < 0) newTime = 0;
+            if (newTime > video.duration) newTime = video.duration;
+            video.currentTime = newTime;
+            updateProgress();
+            showPlayIndicator(delta > 0 ? '→' : '←');
+        }
+        
+        // Start preparing the video
+        function prepareVideo() {
+            loadingText.textContent = 'Preparing video...';
+            loadingProgress.style.width = '10%';
+            
+            // First, prepare the video on the server
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', server + '/api/youtube/prepare/' + videoId, true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200) {
+                        var response = JSON.parse(xhr.responseText);
+                        if (response.status === 'ready') {
+                            loadVideo(response);
+                        } else {
+                            // Start polling for status
+                            loadingText.textContent = 'Downloading & converting...';
+                            loadingProgress.style.width = '30%';
+                            startStatusPolling();
+                        }
+                    } else {
+                        loadingText.textContent = 'Failed to prepare video';
+                        loadingText.style.color = '#ff4444';
+                    }
+                }
+            };
+            xhr.send();
+        }
+        
+        function startStatusPolling() {
+            var pollCount = 0;
+            var maxPolls = 120; // 2 minutes max
+            
+            checkInterval = setInterval(function() {
+                pollCount++;
+                
+                // Update progress animation
+                var progress = Math.min(30 + (pollCount / maxPolls) * 60, 90);
+                loadingProgress.style.width = progress + '%';
+                
+                if (pollCount > maxPolls) {
+                    clearInterval(checkInterval);
+                    loadingText.textContent = 'Timeout - video taking too long';
+                    loadingText.style.color = '#ff4444';
+                    return;
+                }
+                
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', server + '/api/youtube/status/' + videoId, true);
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === 4 && xhr.status === 200) {
+                        var response = JSON.parse(xhr.responseText);
+                        
+                        if (response.status === 'ready') {
+                            clearInterval(checkInterval);
+                            loadVideo(response);
+                        } else if (response.status === 'error') {
+                            clearInterval(checkInterval);
+                            loadingText.textContent = 'Error: ' + (response.message || 'Unknown error');
+                            loadingText.style.color = '#ff4444';
+                        } else {
+                            loadingText.textContent = response.message || 'Processing...';
+                        }
+                    }
+                };
+                xhr.send();
+            }, 1000);
+        }
+        
+        function loadVideo(info) {
+            loadingText.textContent = 'Loading video...';
+            loadingProgress.style.width = '95%';
+            
+            // Get video info for display
+            var infoXhr = new XMLHttpRequest();
+            infoXhr.open('GET', server + '/api/youtube/info/' + videoId, true);
+            infoXhr.onreadystatechange = function() {
+                if (infoXhr.readyState === 4 && infoXhr.status === 200) {
+                    var videoInfo = JSON.parse(infoXhr.responseText);
+                    headerTitle.textContent = 'YouTube';
+                    videoTitle.textContent = videoInfo.title || 'Unknown Title';
+                    videoChannel.textContent = videoInfo.channel || '';
+                    videoStats.textContent = formatViews(videoInfo.views) + 
+                        (videoInfo.duration ? ' • ' + formatTime(videoInfo.duration) : '');
+                }
+            };
+            infoXhr.send();
+            
+            // Load the video
+            video.src = server + '/api/youtube/stream/' + videoId;
+            video.load();
+        }
+        
+        // Video event handlers
+        video.addEventListener('loadedmetadata', function() {
+            loadingProgress.style.width = '100%';
+            updateProgress();
+        });
+        
+        video.addEventListener('canplay', function() {
+            videoReady = true;
+            loading.className = 'loading hidden';
+            // Auto-play
+            video.play();
+            isPlaying = true;
+        });
+        
+        video.addEventListener('timeupdate', updateProgress);
+        
+        video.addEventListener('ended', function() {
+            isPlaying = false;
+            showPlayIndicator('↺');
+        });
+        
+        video.addEventListener('error', function(e) {
+            loadingText.textContent = 'Error playing video';
+            loadingText.style.color = '#ff4444';
+            loading.className = 'loading';
+        });
+        
+        video.addEventListener('waiting', function() {
+            loadingText.textContent = 'Buffering...';
+            loading.className = 'loading';
+        });
+        
+        video.addEventListener('playing', function() {
+            loading.className = 'loading hidden';
+        });
+        
+        // Keyboard controls
+        document.addEventListener('keydown', function(e) {
+            var k = e.key || '';
+            var c = e.keyCode || 0;
+            
+            // Play/Pause: 5, Enter, OK button
+            if (k === '5' || k === 'Enter' || k === 'MicrophoneToggle' || c === 13 || c === 0) {
+                togglePlayPause();
+                e.preventDefault();
+                return;
+            }
+            
+            // Seek backward: 4, Left arrow
+            if (k === '4' || k === 'ArrowLeft' || c === 37) {
+                seek(-seekAmount);
+                e.preventDefault();
+                return;
+            }
+            
+            // Seek forward: 6, Right arrow
+            if (k === '6' || k === 'ArrowRight' || c === 39) {
+                seek(seekAmount);
+                e.preventDefault();
+                return;
+            }
+            
+            // Fullscreen toggle: * key
+            if (k === '*' || c === 170 || c === 56) {
+                toggleFullscreen();
+                e.preventDefault();
+                return;
+            }
+            
+            // Back: 0, Backspace, SoftLeft
+            if (k === '0' || k === 'Backspace' || k === 'SoftLeft' || c === 8) {
+                if (video) {
+                    video.pause();
+                    video.src = '';
+                }
+                if (checkInterval) {
+                    clearInterval(checkInterval);
+                }
+                window.location.href = 'youtube.html';
+                e.preventDefault();
+                return;
+            }
+            
+            // Volume up: 2, Up arrow (not implemented - KaiOS handles volume)
+            // Volume down: 8, Down arrow (not implemented - KaiOS handles volume)
+            
+        }, true);
+        
+        // Start loading
+        headerTitle.textContent = 'Loading: ' + videoId;
+        prepareVideo();
+        
+    })();
+    </script>
+</body>
+</html>

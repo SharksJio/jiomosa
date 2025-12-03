@@ -7,10 +7,15 @@ import logging
 import time
 import base64
 import threading
-from flask import Flask, jsonify, request, send_file, render_template_string
+import hashlib
+import shutil
+import glob
+import re
+from flask import Flask, jsonify, request, send_file, render_template_string, Response
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, disconnect
 from websocket_handler import WebSocketHandler
+from audio_handler import create_audio_streamer
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -19,6 +24,18 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from io import BytesIO
+from PIL import Image
+import subprocess
+import wave
+import struct
+
+# Try to import yt-dlp (may not be available in all environments)
+try:
+    import yt_dlp
+    YT_DLP_AVAILABLE = True
+except ImportError:
+    YT_DLP_AVAILABLE = False
+    logging.warning("yt-dlp not available - YouTube streaming will be disabled")
 
 # Configure logging
 logging.basicConfig(
@@ -46,14 +63,38 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 # Initialize WebSocket handler (will be set when app starts)
 ws_handler = None
 
+# Initialize Audio streamer (will be set when app starts)
+audio_streamer = None
+
 # Environment configuration
 SELENIUM_HOST = os.getenv('SELENIUM_HOST', 'chrome')
 SELENIUM_PORT = os.getenv('SELENIUM_PORT', '4444')
 SESSION_TIMEOUT = int(os.getenv('SESSION_TIMEOUT', '300'))  # 5 minutes default
 FRAME_CAPTURE_INTERVAL = float(os.getenv('FRAME_CAPTURE_INTERVAL', '1.0'))  # 1 second default
 
+# KaiOS client directory - check multiple locations
+KAIOS_CLIENT_DIR = None
+for path in ['/kaios_client', '/app/kaios_client', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kaios_client')]:
+    if os.path.exists(path):
+        KAIOS_CLIENT_DIR = path
+        break
+if not KAIOS_CLIENT_DIR:
+    KAIOS_CLIENT_DIR = '/kaios_client'  # Default fallback
+
+# YouTube video cache directory
+YOUTUBE_CACHE_DIR = os.getenv('YOUTUBE_CACHE_DIR', '/tmp/youtube_cache')
+YOUTUBE_CACHE_MAX_SIZE_MB = int(os.getenv('YOUTUBE_CACHE_MAX_SIZE_MB', '500'))  # 500MB max cache
+YOUTUBE_CACHE_MAX_AGE_HOURS = int(os.getenv('YOUTUBE_CACHE_MAX_AGE_HOURS', '24'))  # Keep videos for 24 hours
+
+# Ensure cache directory exists
+os.makedirs(YOUTUBE_CACHE_DIR, exist_ok=True)
+
 # Store active sessions
 active_sessions = {}
+
+# YouTube download status tracking
+youtube_downloads = {}
+youtube_downloads_lock = threading.Lock()
 
 # Session cleanup thread
 cleanup_thread = None
@@ -79,9 +120,9 @@ class BrowserSession:
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
             
-            # Consistent viewport size - use a standard mobile size that matches window size
-            # This ensures clicks work correctly without coordinate translation issues
-            chrome_options.add_argument('--window-size=390,844')
+            # Use mobile viewport size (320x480) - standard mobile size Chrome can render
+            # Content will be scaled down to 240x320 for KaiOS display
+            chrome_options.add_argument('--window-size=320,480')
             chrome_options.add_argument('--window-position=0,0')
             
             # Kiosk mode: hide browser UI elements for clean web content view
@@ -90,14 +131,14 @@ class BrowserSession:
             chrome_options.add_argument('--disable-infobars')
             chrome_options.add_argument('--disable-extensions')
             
-            # Mobile user agent to load mobile versions of websites
-            mobile_user_agent = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+            # KaiOS-like mobile user agent to load mobile versions of websites
+            mobile_user_agent = 'Mozilla/5.0 (Mobile; rv:48.0) Gecko/48.0 Firefox/48.0 KAIOS/2.5'
             chrome_options.add_argument(f'--user-agent={mobile_user_agent}')
             
             # Mobile emulation for proper responsive rendering
-            # Set pixelRatio to 1.0 to avoid coordinate scaling issues
+            # Using 320x480 which is a standard mobile size Chrome properly supports
             mobile_emulation = {
-                'deviceMetrics': {'width': 390, 'height': 844, 'pixelRatio': 1.0},
+                'deviceMetrics': {'width': 320, 'height': 480, 'pixelRatio': 1.0},
                 'userAgent': mobile_user_agent
             }
             chrome_options.add_experimental_option('mobileEmulation', mobile_emulation)
@@ -115,10 +156,11 @@ class BrowserSession:
                 options=chrome_options
             )
             
-            # Force window size to match viewport exactly to prevent coordinate mismatch
-            self.driver.set_window_size(390, 844)
+            # Chrome has a minimum window size (~500px), so we set a reasonable size
+            # and rely on mobile emulation to render content at mobile dimensions
+            self.driver.set_window_size(320, 480)
             
-            logger.info(f"Browser session {self.session_id} initialized")
+            logger.info(f"Browser session {self.session_id} initialized with mobile emulation")
             return True
         except Exception as e:
             logger.error(f"Failed to initialize browser session: {e}")
@@ -181,11 +223,40 @@ class BrowserSession:
             logger.info(f"Click at ({x}, {y}), viewport: {viewport_size}")
             
             # Use JavaScript-based click for better reliability and navigation support
-            # This method works better for links, buttons, and interactive elements
+            # Enhanced to handle checkboxes, radio buttons, and label elements
             script = f"""
                 var element = document.elementFromPoint({x}, {y});
                 if (element) {{
-                    console.log('Clicking element at ({x}, {y}):', element.tagName, element.className, element.href || '');
+                    console.log('Clicking element at ({x}, {y}):', element.tagName, element.className, element.type || '');
+                    
+                    // Handle label elements - find and click the associated input
+                    if (element.tagName === 'LABEL') {{
+                        var forId = element.getAttribute('for');
+                        if (forId) {{
+                            var input = document.getElementById(forId);
+                            if (input) element = input;
+                        }} else {{
+                            // Label might contain the input
+                            var input = element.querySelector('input');
+                            if (input) element = input;
+                        }}
+                    }}
+                    
+                    // For checkboxes and radio buttons, toggle directly
+                    if (element.tagName === 'INPUT' && (element.type === 'checkbox' || element.type === 'radio')) {{
+                        element.checked = !element.checked;
+                        // Dispatch change event
+                        var changeEvent = new Event('change', {{bubbles: true}});
+                        element.dispatchEvent(changeEvent);
+                        var inputEvent = new Event('input', {{bubbles: true}});
+                        element.dispatchEvent(inputEvent);
+                        return {{
+                            success: true,
+                            element: element.tagName,
+                            type: element.type,
+                            checked: element.checked
+                        }};
+                    }}
                     
                     // Scroll element into view if needed
                     element.scrollIntoView({{behavior: 'instant', block: 'nearest'}});
@@ -247,14 +318,15 @@ class BrowserSession:
                 logger.info(f"Click sent at ({x}, {y}) - element: {result.get('element')} {result.get('class', '')} {result.get('text', '')[:30]}")
                 # Give page time to process the click and start navigation if needed
                 time.sleep(0.1)
-                return True, f"Click sent at ({x}, {y})"
+                # Return element info for client to know what was clicked
+                return True, result
             else:
                 logger.warning(f"Click at ({x}, {y}) - {result}")
-                return True, f"Click sent at ({x}, {y})"
+                return True, {'success': True, 'element': 'UNKNOWN'}
             
         except Exception as e:
             logger.error(f"Error sending click: {e}")
-            return False, f"Error: {str(e)}"
+            return False, {'error': str(e)}
     
     def send_scroll(self, delta_x, delta_y):
         """Send scroll event"""
@@ -321,6 +393,48 @@ class BrowserSession:
             logger.error(f"Error sending text: {e}")
             return False, f"Error: {str(e)}"
     
+    def send_key(self, key):
+        """Send a special key (Enter, Backspace, Tab, etc.) to the browser"""
+        try:
+            if not self.driver:
+                return False, "Driver not initialized"
+            
+            from selenium.webdriver.common.keys import Keys
+            from selenium.webdriver.common.action_chains import ActionChains
+            
+            # Map key names to Selenium Keys
+            key_map = {
+                'Enter': Keys.ENTER,
+                'Backspace': Keys.BACKSPACE,
+                'Tab': Keys.TAB,
+                'Escape': Keys.ESCAPE,
+                'Delete': Keys.DELETE,
+                'ArrowUp': Keys.ARROW_UP,
+                'ArrowDown': Keys.ARROW_DOWN,
+                'ArrowLeft': Keys.ARROW_LEFT,
+                'ArrowRight': Keys.ARROW_RIGHT,
+                'Home': Keys.HOME,
+                'End': Keys.END,
+                'PageUp': Keys.PAGE_UP,
+                'PageDown': Keys.PAGE_DOWN,
+                'Space': Keys.SPACE,
+            }
+            
+            selenium_key = key_map.get(key)
+            if selenium_key:
+                actions = ActionChains(self.driver)
+                actions.send_keys(selenium_key)
+                actions.perform()
+                self.last_activity = time.time()
+                logger.info(f"Key sent: {key}")
+                return True, f"Key {key} sent successfully"
+            else:
+                return False, f"Unknown key: {key}"
+            
+        except Exception as e:
+            logger.error(f"Error sending key: {e}")
+            return False, f"Error: {str(e)}"
+    
     def keepalive(self):
         """Update last activity timestamp to keep session alive"""
         self.last_activity = time.time()
@@ -331,20 +445,30 @@ class BrowserSession:
         """Check if session has expired based on inactivity"""
         return (time.time() - self.last_activity) > timeout
     
-    def capture_frame(self):
-        """Capture current browser frame as PNG screenshot - optimized for high FPS"""
+    def capture_frame(self, target_width=240, target_height=320):
+        """Capture current browser frame as PNG screenshot - optimized for KaiOS display"""
         try:
             if not self.driver:
                 return None
             
-            # Direct screenshot capture - fastest method for 30 FPS
+            # Capture screenshot from browser
             screenshot = self.driver.get_screenshot_as_png()
             
+            # Resize to fit KaiOS display (240x320)
+            img = Image.open(BytesIO(screenshot))
+            # Use high-quality resizing to maintain readability
+            img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+            
+            # Convert back to PNG bytes
+            output = BytesIO()
+            img.save(output, format='PNG', optimize=True)
+            resized_screenshot = output.getvalue()
+            
             with self.frame_lock:
-                self.last_frame = screenshot
+                self.last_frame = resized_screenshot
                 self.last_activity = time.time()
             
-            return screenshot
+            return resized_screenshot
         except Exception as e:
             logger.error(f"Error capturing frame: {e}")
             return None
@@ -629,12 +753,37 @@ def send_click(session_id):
         y = data.get('y', 0)
         
         session = active_sessions[session_id]
-        success, message = session.send_click(x, y)
+        
+        # Client sends coordinates in frame space (240x320)
+        # We need to map to actual browser viewport
+        # Get actual viewport dimensions
+        try:
+            viewport = session.driver.execute_script("return {width: window.innerWidth, height: window.innerHeight};")
+            actual_w = viewport.get('width', 320)
+            actual_h = viewport.get('height', 480)
+            
+            # Map from frame space (240x320) to actual viewport
+            # Frame is 240x320, scale to actual viewport
+            frame_w, frame_h = 240, 320
+            mapped_x = int(x * actual_w / frame_w)
+            mapped_y = int(y * actual_h / frame_h)
+            
+            logger.info(f"Click mapping: ({x},{y}) frame -> ({mapped_x},{mapped_y}) viewport ({actual_w}x{actual_h})")
+        except Exception as e:
+            logger.warning(f"Could not get viewport, using raw coords: {e}")
+            mapped_x, mapped_y = x, y
+        
+        success, result = session.send_click(mapped_x, mapped_y)
+        
+        # result is now a dict with element info
+        element = result.get('element', 'UNKNOWN') if isinstance(result, dict) else 'UNKNOWN'
         
         return jsonify({
             'success': success,
-            'message': message,
-            'coordinates': {'x': x, 'y': y}
+            'message': f"Click sent at ({mapped_x}, {mapped_y})",
+            'element': element,
+            'coordinates': {'x': x, 'y': y},
+            'mapped': {'x': mapped_x, 'y': mapped_y}
         }), 200 if success else 500
         
     except Exception as e:
@@ -667,6 +816,29 @@ def send_scroll(session_id):
         return jsonify({'error': 'Failed to send scroll'}), 500
 
 
+@app.route('/api/session/<session_id>/input/key', methods=['POST'])
+def send_key(session_id):
+    """Send a special key (Enter, Backspace, etc.) to browser session"""
+    try:
+        if session_id not in active_sessions:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        data = request.get_json() or {}
+        key = data.get('key', '')
+        
+        session = active_sessions[session_id]
+        success, message = session.send_key(key)
+        
+        return jsonify({
+            'success': success,
+            'message': message
+        }), 200 if success else 500
+        
+    except Exception as e:
+        logger.error(f"Error sending key: {e}")
+        return jsonify({'error': 'Failed to send key'}), 500
+
+
 @app.route('/api/session/<session_id>/input/text', methods=['POST'])
 def send_text(session_id):
     """Send text input to browser session"""
@@ -688,6 +860,576 @@ def send_text(session_id):
     except Exception as e:
         logger.error(f"Error sending text: {e}")
         return jsonify({'error': 'Failed to send text'}), 500
+
+
+@app.route('/api/session/<session_id>/execute', methods=['POST'])
+def execute_script(session_id):
+    """Execute JavaScript in the browser session"""
+    try:
+        if session_id not in active_sessions:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        data = request.get_json() or {}
+        script = data.get('script', '')
+        
+        if not script:
+            return jsonify({'error': 'Script is required'}), 400
+        
+        session = active_sessions[session_id]
+        if not session.driver:
+            return jsonify({'error': 'Driver not initialized'}), 500
+        
+        try:
+            result = session.driver.execute_script(script)
+            session.last_activity = time.time()
+            return jsonify({
+                'success': True,
+                'result': str(result) if result else None
+            }), 200
+        except Exception as e:
+            logger.error(f"Script execution error: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 200  # Return 200 even on script error to differentiate from API errors
+        
+    except Exception as e:
+        logger.error(f"Error executing script: {e}")
+        return jsonify({'error': 'Failed to execute script'}), 500
+
+
+# ============================================================================
+# YouTube Video Streaming Endpoints (for KaiOS)
+# ============================================================================
+
+def get_video_id_from_url(url_or_id):
+    """Extract YouTube video ID from URL or return ID if already an ID"""
+    if not url_or_id:
+        return None
+    
+    # If it's already a video ID (11 characters, alphanumeric with - and _)
+    if re.match(r'^[a-zA-Z0-9_-]{11}$', url_or_id):
+        return url_or_id
+    
+    # Try to extract from various YouTube URL formats
+    patterns = [
+        r'(?:v=|/v/|youtu\.be/|/embed/|/shorts/)([a-zA-Z0-9_-]{11})',
+        r'(?:watch\?.*v=)([a-zA-Z0-9_-]{11})',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, url_or_id)
+        if match:
+            return match.group(1)
+    
+    return None
+
+
+def get_cached_video_path(video_id):
+    """Get the path to a cached video file"""
+    return os.path.join(YOUTUBE_CACHE_DIR, f"{video_id}_kaios.mp4")
+
+
+def cleanup_old_cache():
+    """Remove old cached videos to free up space"""
+    try:
+        now = time.time()
+        max_age_seconds = YOUTUBE_CACHE_MAX_AGE_HOURS * 3600
+        total_size = 0
+        files_with_time = []
+        
+        for filename in os.listdir(YOUTUBE_CACHE_DIR):
+            filepath = os.path.join(YOUTUBE_CACHE_DIR, filename)
+            if os.path.isfile(filepath):
+                stat = os.stat(filepath)
+                files_with_time.append((filepath, stat.st_mtime, stat.st_size))
+                total_size += stat.st_size
+        
+        # Remove files older than max age
+        for filepath, mtime, size in files_with_time:
+            if now - mtime > max_age_seconds:
+                logger.info(f"Removing old cached video: {filepath}")
+                os.remove(filepath)
+                total_size -= size
+        
+        # If still over size limit, remove oldest files
+        max_size_bytes = YOUTUBE_CACHE_MAX_SIZE_MB * 1024 * 1024
+        if total_size > max_size_bytes:
+            files_with_time.sort(key=lambda x: x[1])  # Sort by mtime, oldest first
+            for filepath, mtime, size in files_with_time:
+                if os.path.exists(filepath):
+                    logger.info(f"Removing cached video to free space: {filepath}")
+                    os.remove(filepath)
+                    total_size -= size
+                    if total_size <= max_size_bytes * 0.8:  # Keep 20% buffer
+                        break
+                        
+    except Exception as e:
+        logger.error(f"Error cleaning up cache: {e}")
+
+
+def download_and_transcode_video(video_id, output_path):
+    """Download YouTube video and transcode to H.264 Baseline for KaiOS"""
+    if not YT_DLP_AVAILABLE:
+        return False, "yt-dlp not available"
+    
+    temp_path = output_path + '.temp'
+    download_path = output_path + '.download'
+    
+    try:
+        # yt-dlp options for downloading video with audio merged
+        # Use format that includes both video and audio in a single file
+        ydl_opts = {
+            'format': 'best[ext=mp4][height<=480]/best[height<=480]/best',  # Prefer mp4 with video+audio
+            'outtmpl': download_path,
+            'quiet': False,  # Enable output for debugging
+            'no_warnings': False,
+            'extract_flat': False,
+            'merge_output_format': 'mp4',  # Force merge to mp4 if separate streams
+            'postprocessors': [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4',
+            }],
+        }
+        
+        # Download the video
+        logger.info(f"Downloading YouTube video: {video_id}")
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            title = info.get('title', 'Unknown')
+            duration = info.get('duration', 0)
+            logger.info(f"Downloaded: {title} ({duration}s)")
+        
+        # Find the downloaded file (yt-dlp may add extension)
+        actual_download = None
+        for ext in ['', '.mp4', '.webm', '.mkv', '.m4a']:
+            check_path = download_path + ext if ext else download_path
+            if os.path.exists(check_path):
+                actual_download = check_path
+                break
+        
+        if not actual_download:
+            # Try glob pattern
+            matches = glob.glob(download_path + '*')
+            if matches:
+                actual_download = matches[0]
+        
+        if not actual_download or not os.path.exists(actual_download):
+            return False, "Download failed - file not found"
+        
+        # Transcode to H.264 Baseline profile for KaiOS compatibility
+        # Using ffmpeg with settings optimized for KaiOS Gecko 48
+        logger.info(f"Transcoding to H.264 Baseline: {video_id}")
+        
+        ffmpeg_cmd = [
+            'ffmpeg', '-y',
+            '-i', actual_download,
+            '-c:v', 'libx264',
+            '-profile:v', 'baseline',
+            '-level', '3.0',
+            '-preset', 'fast',
+            '-crf', '28',  # Reasonable quality with smaller file size
+            '-vf', 'scale=320:-2',  # Scale to 320px width for KaiOS screen
+            '-c:a', 'aac',
+            '-ac', '2',
+            '-ar', '44100',
+            '-b:a', '96k',  # Lower audio bitrate for smaller files
+            '-movflags', '+faststart',  # Enable progressive download
+            '-threads', '2',
+            '-f', 'mp4',  # Explicitly specify mp4 format for .temp file
+            temp_path
+        ]
+        
+        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=600)
+        
+        # Clean up download file
+        if os.path.exists(actual_download):
+            os.remove(actual_download)
+        
+        if result.returncode != 0:
+            logger.error(f"FFmpeg error: {result.stderr}")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return False, f"Transcoding failed: {result.stderr[:200]}"
+        
+        # Move temp file to final location
+        shutil.move(temp_path, output_path)
+        
+        # Get file size
+        file_size = os.path.getsize(output_path)
+        logger.info(f"Video ready: {video_id} ({file_size / 1024:.1f} KB)")
+        
+        # Cleanup old cache files
+        cleanup_old_cache()
+        
+        return True, {"title": title, "duration": duration, "size": file_size}
+        
+    except subprocess.TimeoutExpired:
+        logger.error(f"Transcoding timeout for video: {video_id}")
+        for path in [temp_path, download_path]:
+            if os.path.exists(path):
+                os.remove(path)
+        return False, "Transcoding timeout"
+    except Exception as e:
+        logger.error(f"Error downloading/transcoding video {video_id}: {e}")
+        for path in [temp_path, download_path]:
+            if os.path.exists(path):
+                os.remove(path)
+        return False, str(e)
+
+
+@app.route('/api/youtube/info/<video_id>', methods=['GET'])
+def youtube_video_info(video_id):
+    """Get information about a YouTube video without downloading"""
+    if not YT_DLP_AVAILABLE:
+        return jsonify({'error': 'YouTube streaming not available'}), 503
+    
+    video_id = get_video_id_from_url(video_id)
+    if not video_id:
+        return jsonify({'error': 'Invalid video ID'}), 400
+    
+    try:
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': False,
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+        # Check if already cached
+        cached_path = get_cached_video_path(video_id)
+        is_cached = os.path.exists(cached_path)
+        
+        return jsonify({
+            'success': True,
+            'video_id': video_id,
+            'title': info.get('title', 'Unknown'),
+            'duration': info.get('duration', 0),
+            'thumbnail': info.get('thumbnail', ''),
+            'channel': info.get('uploader', 'Unknown'),
+            'views': info.get('view_count', 0),
+            'cached': is_cached,
+            'stream_url': f'/api/youtube/stream/{video_id}'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting video info for {video_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/youtube/prepare/<video_id>', methods=['POST'])
+def youtube_prepare_video(video_id):
+    """Start preparing a YouTube video for streaming (download + transcode)"""
+    if not YT_DLP_AVAILABLE:
+        return jsonify({'error': 'YouTube streaming not available'}), 503
+    
+    video_id = get_video_id_from_url(video_id)
+    if not video_id:
+        return jsonify({'error': 'Invalid video ID'}), 400
+    
+    cached_path = get_cached_video_path(video_id)
+    
+    # If already cached, return immediately
+    if os.path.exists(cached_path):
+        file_size = os.path.getsize(cached_path)
+        return jsonify({
+            'success': True,
+            'status': 'ready',
+            'video_id': video_id,
+            'size': file_size,
+            'stream_url': f'/api/youtube/stream/{video_id}'
+        })
+    
+    # Check if already downloading
+    with youtube_downloads_lock:
+        if video_id in youtube_downloads:
+            status = youtube_downloads[video_id]
+            return jsonify({
+                'success': True,
+                'status': status.get('status', 'downloading'),
+                'video_id': video_id,
+                'message': status.get('message', 'Download in progress')
+            })
+        
+        # Start download in background
+        youtube_downloads[video_id] = {'status': 'downloading', 'message': 'Starting download...'}
+    
+    def download_thread():
+        try:
+            with youtube_downloads_lock:
+                youtube_downloads[video_id] = {'status': 'downloading', 'message': 'Downloading video...'}
+            
+            success, result = download_and_transcode_video(video_id, cached_path)
+            
+            with youtube_downloads_lock:
+                if success:
+                    youtube_downloads[video_id] = {
+                        'status': 'ready',
+                        'message': 'Video ready',
+                        'title': result.get('title', ''),
+                        'size': result.get('size', 0)
+                    }
+                else:
+                    youtube_downloads[video_id] = {
+                        'status': 'error',
+                        'message': str(result)
+                    }
+        except Exception as e:
+            with youtube_downloads_lock:
+                youtube_downloads[video_id] = {'status': 'error', 'message': str(e)}
+    
+    thread = threading.Thread(target=download_thread, daemon=True)
+    thread.start()
+    
+    return jsonify({
+        'success': True,
+        'status': 'downloading',
+        'video_id': video_id,
+        'message': 'Download started'
+    })
+
+
+@app.route('/api/youtube/status/<video_id>', methods=['GET'])
+def youtube_video_status(video_id):
+    """Check the status of a video preparation"""
+    video_id = get_video_id_from_url(video_id)
+    if not video_id:
+        return jsonify({'error': 'Invalid video ID'}), 400
+    
+    cached_path = get_cached_video_path(video_id)
+    
+    # If file exists, it's ready
+    if os.path.exists(cached_path):
+        file_size = os.path.getsize(cached_path)
+        return jsonify({
+            'success': True,
+            'status': 'ready',
+            'video_id': video_id,
+            'size': file_size,
+            'stream_url': f'/api/youtube/stream/{video_id}'
+        })
+    
+    # Check download status
+    with youtube_downloads_lock:
+        if video_id in youtube_downloads:
+            status = youtube_downloads[video_id]
+            return jsonify({
+                'success': True,
+                'status': status.get('status', 'unknown'),
+                'video_id': video_id,
+                'message': status.get('message', ''),
+                'stream_url': f'/api/youtube/stream/{video_id}' if status.get('status') == 'ready' else None
+            })
+    
+    return jsonify({
+        'success': True,
+        'status': 'not_found',
+        'video_id': video_id,
+        'message': 'Video not prepared. Call /api/youtube/prepare/{video_id} first.'
+    })
+
+
+@app.route('/api/youtube/stream/<video_id>', methods=['GET'])
+def youtube_stream_video(video_id):
+    """Stream a prepared YouTube video (H.264 Baseline for KaiOS)"""
+    video_id = get_video_id_from_url(video_id)
+    if not video_id:
+        return jsonify({'error': 'Invalid video ID'}), 400
+    
+    cached_path = get_cached_video_path(video_id)
+    
+    # If not cached, start download and return status
+    if not os.path.exists(cached_path):
+        # Auto-prepare the video
+        if YT_DLP_AVAILABLE:
+            # Check if already downloading
+            with youtube_downloads_lock:
+                if video_id not in youtube_downloads:
+                    youtube_downloads[video_id] = {'status': 'downloading', 'message': 'Starting...'}
+                    
+                    def auto_download():
+                        try:
+                            success, result = download_and_transcode_video(video_id, cached_path)
+                            with youtube_downloads_lock:
+                                if success:
+                                    youtube_downloads[video_id] = {'status': 'ready'}
+                                else:
+                                    youtube_downloads[video_id] = {'status': 'error', 'message': str(result)}
+                        except Exception as e:
+                            with youtube_downloads_lock:
+                                youtube_downloads[video_id] = {'status': 'error', 'message': str(e)}
+                    
+                    thread = threading.Thread(target=auto_download, daemon=True)
+                    thread.start()
+        
+        return jsonify({
+            'error': 'Video not ready',
+            'status': 'preparing',
+            'video_id': video_id,
+            'message': 'Video is being prepared. Check /api/youtube/status/{video_id}'
+        }), 202
+    
+    # Stream the video with proper headers for progressive download
+    try:
+        file_size = os.path.getsize(cached_path)
+        
+        # Support range requests for seeking
+        range_header = request.headers.get('Range')
+        
+        if range_header:
+            # Parse range header
+            byte_start = 0
+            byte_end = file_size - 1
+            
+            match = re.match(r'bytes=(\d+)-(\d*)', range_header)
+            if match:
+                byte_start = int(match.group(1))
+                if match.group(2):
+                    byte_end = int(match.group(2))
+            
+            byte_end = min(byte_end, file_size - 1)
+            content_length = byte_end - byte_start + 1
+            
+            def generate():
+                with open(cached_path, 'rb') as f:
+                    f.seek(byte_start)
+                    remaining = content_length
+                    while remaining > 0:
+                        chunk_size = min(8192, remaining)
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        remaining -= len(chunk)
+                        yield chunk
+            
+            response = Response(
+                generate(),
+                status=206,
+                mimetype='video/mp4',
+                direct_passthrough=True
+            )
+            response.headers['Content-Range'] = f'bytes {byte_start}-{byte_end}/{file_size}'
+            response.headers['Accept-Ranges'] = 'bytes'
+            response.headers['Content-Length'] = content_length
+            return response
+        
+        # Full file response
+        return send_file(
+            cached_path,
+            mimetype='video/mp4',
+            as_attachment=False,
+            conditional=True
+        )
+        
+    except Exception as e:
+        logger.error(f"Error streaming video {video_id}: {e}")
+        return jsonify({'error': 'Failed to stream video'}), 500
+
+
+@app.route('/api/youtube/list', methods=['GET'])
+def youtube_list_cached():
+    """List all cached YouTube videos"""
+    try:
+        videos = []
+        for filename in os.listdir(YOUTUBE_CACHE_DIR):
+            if filename.endswith('_kaios.mp4'):
+                video_id = filename.replace('_kaios.mp4', '')
+                filepath = os.path.join(YOUTUBE_CACHE_DIR, filename)
+                stat = os.stat(filepath)
+                videos.append({
+                    'video_id': video_id,
+                    'size': stat.st_size,
+                    'created': stat.st_mtime,
+                    'stream_url': f'/api/youtube/stream/{video_id}'
+                })
+        
+        return jsonify({
+            'success': True,
+            'videos': videos,
+            'cache_dir': YOUTUBE_CACHE_DIR,
+            'total_size': sum(v['size'] for v in videos)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error listing cached videos: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# KaiOS Client Serving Endpoints
+# ============================================================================
+
+@app.route('/kaios/debug', methods=['GET'])
+def kaios_debug():
+    """Debug endpoint to check KaiOS client directory"""
+    import glob
+    files = []
+    if os.path.exists(KAIOS_CLIENT_DIR):
+        files = os.listdir(KAIOS_CLIENT_DIR)
+    return jsonify({
+        'kaios_client_dir': KAIOS_CLIENT_DIR,
+        'exists': os.path.exists(KAIOS_CLIENT_DIR),
+        'files': files,
+        'cwd': os.getcwd()
+    })
+
+@app.route('/kaios/', methods=['GET'])
+def serve_kaios_index():
+    """Serve KaiOS launcher page"""
+    return serve_kaios_client('launcher.html')
+
+@app.route('/kaios/<path:filename>', methods=['GET'])
+def serve_kaios_client(filename):
+    """Serve KaiOS client files"""
+    try:
+        logger.info(f"Serving KaiOS file: {filename}, from dir: {KAIOS_CLIENT_DIR}")
+        
+        # Security: only allow specific file extensions
+        allowed_extensions = ['.html', '.css', '.js', '.png', '.jpg', '.ico', '.svg', '.webapp', '.json', '.mp4', '.webm', '.ogg', '.mp3', '.wav']
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in allowed_extensions:
+            return jsonify({'error': 'File type not allowed'}), 403
+        
+        file_path = os.path.join(KAIOS_CLIENT_DIR, filename)
+        
+        # Security: prevent directory traversal
+        if not os.path.abspath(file_path).startswith(os.path.abspath(KAIOS_CLIENT_DIR)):
+            return jsonify({'error': 'Access denied'}), 403
+        
+        if not os.path.exists(file_path):
+            logger.error(f"KaiOS file not found: {file_path}")
+            return jsonify({'error': 'KaiOS client not found', 'path': file_path}), 404
+        
+        # Determine content type
+        content_types = {
+            '.html': 'text/html; charset=utf-8',
+            '.css': 'text/css; charset=utf-8',
+            '.js': 'application/javascript; charset=utf-8',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.ico': 'image/x-icon',
+            '.svg': 'image/svg+xml',
+            '.webapp': 'application/x-web-app-manifest+json',
+            '.json': 'application/json',
+            '.mp4': 'video/mp4',
+            '.webm': 'video/webm',
+            '.ogg': 'video/ogg',
+            '.mp3': 'audio/mpeg',
+            '.wav': 'audio/wav'
+        }
+        content_type = content_types.get(ext, 'application/octet-stream')
+        
+        return send_file(file_path, mimetype=content_type)
+        
+    except Exception as e:
+        logger.error(f"Error serving KaiOS file: {e}")
+        return jsonify({'error': 'Failed to serve file'}), 500
 
 
 @app.route('/api/session/<session_id>/close', methods=['POST', 'DELETE'])
@@ -1255,16 +1997,61 @@ def handle_adaptive_toggle(data):
     emit('adaptive:updated', {'enabled': enabled})
 
 
+# ============================================================================
+# Audio WebSocket Handlers for KaiOS Client
+# ============================================================================
+
+@socketio.on('audio:subscribe')
+def handle_audio_subscribe(data):
+    """Subscribe to audio streaming for a session
+    
+    Expected data: {'session_id': 'session-xyz'}
+    """
+    global audio_streamer
+    if not audio_streamer:
+        emit('error', {'message': 'Audio streamer not initialized'})
+        return
+    
+    session_id = data.get('session_id')
+    if not session_id:
+        emit('error', {'message': 'session_id is required'})
+        return
+    
+    if session_id not in active_sessions:
+        emit('error', {'message': f'Session {session_id} not found'})
+        return
+    
+    logger.info(f"Client {request.sid} subscribing to audio for session {session_id}")
+    audio_streamer.subscribe_client(request.sid, session_id)
+    emit('audio:subscribed', {'session_id': session_id, 'message': 'Subscribed to audio stream'})
+
+
+@socketio.on('audio:unsubscribe')
+def handle_audio_unsubscribe(data):
+    """Unsubscribe from audio streaming"""
+    global audio_streamer
+    if audio_streamer:
+        session_id = data.get('session_id', 'unknown')
+        logger.info(f"Client {request.sid} unsubscribing from audio for session {session_id}")
+        audio_streamer.unsubscribe_client(request.sid)
+    emit('audio:unsubscribed', {'message': 'Unsubscribed from audio stream'})
+
+
 if __name__ == '__main__':
     logger.info("Starting Jiomosa Renderer Service with WebSocket Streaming")
     logger.info(f"Selenium: {SELENIUM_HOST}:{SELENIUM_PORT}")
     logger.info(f"Session Timeout: {SESSION_TIMEOUT} seconds")
     logger.info(f"Frame Capture Interval: {FRAME_CAPTURE_INTERVAL} seconds")
+    logger.info(f"KaiOS Client Dir: {KAIOS_CLIENT_DIR}")
     logger.info("WebSocket: Socket.IO enabled on ws://0.0.0.0:5000/socket.io/")
     
     # Initialize WebSocket handler
     ws_handler = WebSocketHandler(socketio, active_sessions)
     logger.info("WebSocket handler initialized")
+    
+    # Initialize Audio streamer
+    audio_streamer = create_audio_streamer(socketio, active_sessions)
+    logger.info("Audio streamer initialized")
     
     # Start cleanup thread
     cleanup_thread = threading.Thread(target=cleanup_expired_sessions, daemon=True)

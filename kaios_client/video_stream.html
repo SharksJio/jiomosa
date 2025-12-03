@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=240, height=320, user-scalable=no">
+    <title>Video Stream</title>
+    <style>
+    * { margin: 0; padding: 0; }
+    html, body { width: 240px; height: 320px; overflow: hidden; background: #000; font-family: Arial, sans-serif; }
+    #container { width: 240px; height: 320px; position: relative; }
+    video { width: 240px; height: 280px; background: #000; display: block; }
+    #status { position: absolute; top: 4px; left: 4px; color: #0f0; font-size: 9px; background: rgba(0,0,0,0.8); padding: 2px 6px; z-index: 10; }
+    #info { width: 240px; height: 40px; background: #111; color: #fff; font-size: 9px; padding: 4px 8px; position: absolute; bottom: 0; left: 0; }
+    #info .title { color: #0ff; margin-bottom: 2px; }
+    #info .controls { color: #888; font-size: 8px; }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <video id="video" controls preload="auto">
+            <source id="source" src="" type="video/mp4">
+            Your browser does not support video
+        </video>
+        <div id="status">Ready</div>
+        <div id="info">
+            <div class="title">Test Video - Big Buck Bunny</div>
+            <div class="controls">OK:Play/Pause | 2/8:Vol | 0:Exit</div>
+        </div>
+    </div>
+    <script>
+    (function() {
+        var video = document.getElementById('video');
+        var source = document.getElementById('source');
+        var status = document.getElementById('status');
+        
+        // Build video URL from current server - use KaiOS compatible video
+        var videoUrl = window.location.protocol + '//' + window.location.host + '/kaios/test_video_kaios.mp4';
+        
+        function log(msg) {
+            status.textContent = msg;
+            console.log(msg);
+        }
+        
+        log('Loading: ' + videoUrl);
+        
+        // Set source and load
+        source.src = videoUrl;
+        video.load();
+        
+        // Video events
+        video.onloadstart = function() { log('Loading...'); };
+        video.onloadedmetadata = function() { log('Metadata OK'); };
+        video.onloadeddata = function() { log('Data loaded'); };
+        video.oncanplay = function() { log('Can play'); };
+        video.oncanplaythrough = function() { log('Ready!'); };
+        video.onplay = function() { log('Playing'); };
+        video.onpause = function() { log('Paused'); };
+        video.onwaiting = function() { log('Buffering...'); };
+        video.onerror = function(e) { 
+            var err = video.error;
+            var msg = 'Error';
+            if (err) {
+                switch(err.code) {
+                    case 1: msg = 'Aborted'; break;
+                    case 2: msg = 'Network error'; break;
+                    case 3: msg = 'Decode error'; break;
+                    case 4: msg = 'Not supported'; break;
+                }
+            }
+            log(msg);
+        };
+        
+        // Key controls
+        document.addEventListener('keydown', function(e) {
+            var k = e.key || '';
+            var c = e.keyCode || 0;
+            
+            // Play/Pause
+            if (k === '5' || k === 'Enter' || k === 'MicrophoneToggle' || c === 13 || c === 0) {
+                if (video.paused) {
+                    video.play();
+                } else {
+                    video.pause();
+                }
+                e.preventDefault();
+                return;
+            }
+            
+            // Volume up
+            if (k === '2' || k === 'ArrowUp' || c === 38) {
+                video.volume = Math.min(1, video.volume + 0.1);
+                log('Vol: ' + Math.round(video.volume * 100) + '%');
+                e.preventDefault();
+                return;
+            }
+            
+            // Volume down
+            if (k === '8' || k === 'ArrowDown' || c === 40) {
+                video.volume = Math.max(0, video.volume - 0.1);
+                log('Vol: ' + Math.round(video.volume * 100) + '%');
+                e.preventDefault();
+                return;
+            }
+            
+            // Exit
+            if (k === '0' || k === 'Backspace' || c === 8) {
+                video.pause();
+                window.location.href = 'launcher.html';
+                e.preventDefault();
+                return;
+            }
+        }, true);
+        
+        // Try autoplay after a short delay
+        setTimeout(function() {
+            video.play().catch(function(e) {
+                log('Press OK to play');
+            });
+        }, 500);
+        
+    })();
+    </script>
+</body>
+</html>

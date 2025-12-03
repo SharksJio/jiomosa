@@ -36,6 +36,7 @@ services:
       - jiomosa-network
     volumes:
       - ./renderer:/app
+      - ./kaios_client:/kaios_client:ro
 
   # Android WebApp - Mobile app launcher interface
   android-webapp:

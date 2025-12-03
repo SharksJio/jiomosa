@@ -1,0 +1,32 @@
+{
+  "name": "Jiomosa Cloud Browser",
+  "description": "Cloud-rendered browser for KaiOS devices",
+  "launch_path": "/kaios/launcher.html",
+  "icons": {
+    "56": "/kaios/icons/icon-112.svg",
+    "112": "/kaios/icons/icon-112.svg"
+  },
+  "developer": {
+    "name": "Jiomosa Project",
+    "url": "https://github.com/jiomosa"
+  },
+  "type": "privileged",
+  "permissions": {
+    "systemXHR": {
+      "description": "Required for cross-origin API requests"
+    },
+    "audio-capture": {
+      "description": "Required for audio playback"
+    }
+  },
+  "installs_allowed_from": ["*"],
+  "default_locale": "en",
+  "locales": {
+    "en": {
+      "name": "Jiomosa Cloud Browser",
+      "description": "Cloud-rendered browser for KaiOS devices"
+    }
+  },
+  "orientation": "portrait",
+  "fullscreen": true
+}

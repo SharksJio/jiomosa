@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Jiomosa Browser</title>
+    <style>
+    * { margin: 0; padding: 0; -moz-box-sizing: border-box; box-sizing: border-box; }
+    html, body { width: 240px; height: 320px; overflow: hidden; font-family: Arial, sans-serif; background: #000; color: #fff; }
+    .container { width: 240px; height: 320px; position: relative; }
+    .frame { width: 240px; height: 260px; background: #111; position: relative; overflow: hidden; }
+    .frame img { width: 100%; height: 100%; object-fit: contain; }
+    .cursor { position: absolute; width: 0; height: 0; border-left: 10px solid #fff; border-top: 6px solid transparent; border-bottom: 6px solid transparent; pointer-events: none; z-index: 100; filter: drop-shadow(1px 1px 1px #000); }
+    .status { width: 240px; height: 60px; background: #111; padding: 2px 6px; font-size: 8px; color: #888; }
+    .url { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+    .controls { font-size: 7px; color: #666; line-height: 1.4; }
+    .conn { position: absolute; top: 4px; left: 4px; width: 8px; height: 8px; border-radius: 50%; background: #f00; }
+    .conn.ok { background: #0f0; }
+    .loading { position: absolute; top: 0; left: 0; width: 240px; height: 260px; background: rgba(0,0,0,0.9); display: -moz-box; display: flex; -moz-box-align: center; align-items: center; -moz-box-pack: center; justify-content: center; z-index: 200; }
+    .loading.hide { display: none; }
+    .spinner { width: 30px; height: 30px; border: 3px solid #333; border-top-color: #e94560; border-radius: 50%; -moz-animation: spin 1s linear infinite; animation: spin 1s linear infinite; }
+    @-moz-keyframes spin { to { -moz-transform: rotate(360deg); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .debug { position: absolute; top: 4px; right: 4px; font-size: 8px; color: #ff0; background: rgba(0,0,0,0.7); padding: 2px 4px; z-index: 300; }
+    .textbar { width: 240px; height: 28px; background: #222; padding: 2px 4px; display: none; position: absolute; bottom: 60px; left: 0; z-index: 250; }
+    .textbar.show { display: block; }
+    .textbar input { width: 188px; height: 22px; background: #333; border: 1px solid #e94560; color: #fff; font-size: 11px; padding: 0 6px; vertical-align: middle; }
+    .textbar button { width: 42px; height: 22px; background: #e94560; border: none; color: #fff; font-size: 9px; vertical-align: middle; }
+    .typing { position: absolute; bottom: 62px; left: 4px; font-size: 9px; color: #0f0; background: rgba(0,0,0,0.8); padding: 2px 6px; z-index: 260; display: none; }
+    .typing.show { display: block; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="frame" id="frame">
+            <img id="img" src="">
+            <div class="cursor" id="cursor"></div>
+            <div class="conn" id="conn"></div>
+            <div class="debug" id="debug"></div>
+        </div>
+        <div class="loading" id="loading"><div class="spinner"></div></div>
+        <div class="textbar" id="textbar">
+            <input type="text" id="textinput" placeholder="Type and press OK">
+            <button id="textsend">GO</button>
+        </div>
+        <div class="typing" id="typing">TYPING MODE</div>
+        <div class="status">
+            <div class="url" id="url">Loading...</div>
+            <div class="controls">2468:Move | OK:Click | 5:Play/Pause | #:Text<br>3:Zoom+ 1:Zoom- | 9:Scroll | 7:Back | 0:Home</div>
+        </div>
+    </div>
+    <script>
+    (function() {
+        var server = localStorage.getItem('jiomosa_server') || '';
+        var targetUrl = localStorage.getItem('jiomosa_url') || 'https://duckduckgo.com';
+        var sessionId = 'kaios_' + Date.now();
+        var connected = false;
+        var textBarOpen = false;
+        var typingMode = false;
+        var cursorX = 120, cursorY = 130;
+        // Frame image size (what we receive from server, resized to 240x320)
+        var frameW = 240, frameH = 320;
+        // Display area on KaiOS screen (240x260 visible, 60px for status bar)
+        var clientW = 240, clientH = 260;
+        var frameTimer = null;
+        var clickPending = false;  // Debounce for click
+
+        var img = document.getElementById('img');
+        var cursor = document.getElementById('cursor');
+        var conn = document.getElementById('conn');
+        var debug = document.getElementById('debug');
+        var loading = document.getElementById('loading');
+        var urlEl = document.getElementById('url');
+        var textbar = document.getElementById('textbar');
+        var textinput = document.getElementById('textinput');
+        var textsend = document.getElementById('textsend');
+        var typingEl = document.getElementById('typing');
+
+        function log(m) { debug.textContent = m; }
+        function updateCursor() {
+            if (cursorX < 0) cursorX = 0;
+            if (cursorX > clientW) cursorX = clientW;
+            if (cursorY < 0) cursorY = 0;
+            if (cursorY > clientH) cursorY = clientH;
+            cursor.style.left = cursorX + 'px';
+            cursor.style.top = cursorY + 'px';
+        }
+
+        function createSession() {
+            // First, close any existing session for this device
+            var oldSession = localStorage.getItem('jiomosa_session');
+            if (oldSession) {
+                var closeXhr = new XMLHttpRequest();
+                closeXhr.open('POST', server + '/api/session/' + oldSession + '/close', true);
+                closeXhr.send();
+            }
+            
+            var xhr = new XMLHttpRequest();
+            xhr.timeout = 30000;  // 30 second timeout
+            xhr.open('POST', server + '/api/session/create', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200 || xhr.status === 201 || xhr.status === 400) {
+                        try {
+                            var r = JSON.parse(xhr.responseText);
+                            if (r.session_id) {
+                                sessionId = r.session_id;
+                                localStorage.setItem('jiomosa_session', sessionId);
+                            }
+                        } catch(e) {}
+                        loadUrl();
+                    } else {
+                        log('Session fail:' + xhr.status);
+                        loading.className = 'loading hide';
+                    }
+                }
+            };
+            xhr.ontimeout = function() {
+                log('Session timeout');
+                loading.className = 'loading hide';
+            };
+            xhr.send(JSON.stringify({ session_id: sessionId }));
+        }
+
+        function loadUrl() {
+            urlEl.textContent = targetUrl;
+            var xhr = new XMLHttpRequest();
+            xhr.timeout = 30000;  // 30 second timeout
+            xhr.open('POST', server + '/api/session/' + sessionId + '/load', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200) {
+                        connected = true;
+                        conn.className = 'conn ok';
+                        loading.className = 'loading hide';
+                        startFrames();
+                    } else {
+                        log('Load fail:' + xhr.status);
+                        loading.className = 'loading hide';
+                    }
+                }
+            };
+            xhr.ontimeout = function() {
+                log('Timeout');
+                loading.className = 'loading hide';
+            };
+            xhr.send(JSON.stringify({ url: targetUrl }));
+        }
+
+        function startFrames() {
+            fetchFrame();
+            frameTimer = setInterval(fetchFrame, 150);
+        }
+
+        function fetchFrame() {
+            if (!connected) return;
+            var i = new Image();
+            i.onload = function() { img.src = i.src; };
+            i.src = server + '/api/session/' + sessionId + '/frame?t=' + Date.now();
+        }
+
+        function click() {
+            if (!connected) { log('Not connected'); return; }
+            // Map from display area (240x260) to frame space (240x320)
+            // X stays same (both 240 wide), Y scales from 260 to 320
+            var sx = Math.round(cursorX);
+            var sy = Math.round(cursorY * (frameH / clientH));
+            log('Clk ' + sx + ',' + sy);
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', server + '/api/session/' + sessionId + '/input/click', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200) {
+                        try {
+                            var r = JSON.parse(xhr.responseText);
+                            log('OK ' + sx + ',' + sy);
+                            // Auto-open text bar if clicked on input/textarea
+                            if (r.element === 'INPUT' || r.element === 'TEXTAREA') {
+                                if (!textBarOpen) toggleTextBar();
+                            }
+                        } catch(e) {
+                            log('OK ' + sx + ',' + sy);
+                        }
+                    } else {
+                        log('Err:' + xhr.status);
+                    }
+                }
+            };
+            xhr.send(JSON.stringify({ x: sx, y: sy }));
+            setTimeout(fetchFrame, 300);
+        }
+
+        function scroll(dy) {
+            if (!connected) return;
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', server + '/api/session/' + sessionId + '/input/scroll', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.send(JSON.stringify({ deltaX: 0, deltaY: dy }));
+            setTimeout(fetchFrame, 150);
+        }
+
+        function zoom(factor) {
+            if (!connected) return;
+            // Calculate new zoom level
+            var newZoom = factor > 1 ? '+0.3' : '-0.3';
+            var script = 'var z = parseFloat(document.body.style.zoom || 1); z = Math.max(0.5, Math.min(4, z ' + newZoom + ')); document.body.style.zoom = z.toFixed(1); z.toFixed(1)';
+            log('Zoom');
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', server + '/api/session/' + sessionId + '/execute', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4 && xhr.status === 200) {
+                    try {
+                        var r = JSON.parse(xhr.responseText);
+                        if (r.result) log('Zoom: ' + r.result + 'x');
+                    } catch(e) {}
+                }
+            };
+            xhr.send(JSON.stringify({ script: script }));
+            setTimeout(fetchFrame, 200);
+        }
+
+        function playPauseVideo() {
+            if (!connected) return;
+            log('Play/Pause');
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', server + '/api/session/' + sessionId + '/execute', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            // Try multiple methods to play/pause video
+            var script = 'var v = document.querySelector("video"); if(v) { if(v.paused) v.play(); else v.pause(); "video" } else { var btn = document.querySelector(".ytp-play-button, [aria-label*=Play], [aria-label*=Pause], button[data-title-no-tooltip=Play], button[data-title-no-tooltip=Pause]"); if(btn) { btn.click(); "button" } else { document.dispatchEvent(new KeyboardEvent("keydown", {key: "k", keyCode: 75})); "key" } }';
+            xhr.send(JSON.stringify({ script: script }));
+            setTimeout(fetchFrame, 300);
+        }
+
+        function sendText(text) {
+            if (!connected || !text) return;
+            log('Send: ' + text);
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', server + '/api/session/' + sessionId + '/input/text', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.send(JSON.stringify({ text: text }));
+            setTimeout(fetchFrame, 300);
+        }
+
+        function sendKey(key) {
+            if (!connected) return;
+            log('Key: ' + key);
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', server + '/api/session/' + sessionId + '/input/key', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.send(JSON.stringify({ key: key }));
+            setTimeout(fetchFrame, 200);
+        }
+
+        function goBack() {
+            if (!connected) return;
+            log('Back');
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', server + '/api/session/' + sessionId + '/execute', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.send(JSON.stringify({ script: 'window.history.back()' }));
+            setTimeout(fetchFrame, 500);
+        }
+
+        function goHome() {
+            if (frameTimer) clearInterval(frameTimer);
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', server + '/api/session/' + sessionId + '/close', true);
+            xhr.send();
+            window.location.href = 'launcher.html';
+        }
+
+        function toggleTextBar() {
+            textBarOpen = !textBarOpen;
+            textbar.className = textBarOpen ? 'textbar show' : 'textbar';
+            if (textBarOpen) {
+                textinput.value = '';
+                textinput.focus();
+            }
+        }
+
+        function toggleTypingMode() {
+            typingMode = !typingMode;
+            typingEl.className = typingMode ? 'typing show' : 'typing';
+            log(typingMode ? 'TYPING ON' : 'TYPING OFF');
+        }
+
+        textsend.onclick = function() {
+            var t = textinput.value;
+            if (t) {
+                sendText(t);
+                textinput.value = '';
+            }
+            toggleTextBar();
+        };
+
+        updateCursor();
+        if (server) createSession();
+        else log('No server');
+
+        document.addEventListener('keydown', function(e) {
+            var k = e.key || '';
+            var c = e.keyCode || 0;
+
+            // Text bar mode
+            if (textBarOpen) {
+                if (k === 'Enter' || c === 13 || k === 'MicrophoneToggle' || c === 0) {
+                    textsend.onclick();
+                    e.preventDefault();
+                } else if (k === 'Escape' || k === 'SoftRight' || (k === 'Backspace' && textinput.value === '')) {
+                    toggleTextBar();
+                    e.preventDefault();
+                }
+                return;
+            }
+
+            // Typing mode - send keystrokes directly to remote browser
+            if (typingMode) {
+                // Exit typing mode
+                if (k === '*' || c === 42) {
+                    toggleTypingMode();
+                    e.preventDefault();
+                    return;
+                }
+                // Send Enter
+                if (k === 'Enter' || c === 13 || k === 'MicrophoneToggle' || c === 0) {
+                    sendKey('Enter');
+                    e.preventDefault();
+                    return;
+                }
+                // Send Backspace
+                if (k === 'Backspace' || c === 8) {
+                    sendKey('Backspace');
+                    e.preventDefault();
+                    return;
+                }
+                // Send typed character
+                if (k.length === 1) {
+                    sendText(k);
+                    e.preventDefault();
+                    return;
+                }
+                return;
+            }
+
+            log('K:' + k + ' C:' + c);
+            var step = 20;
+
+            // Navigation with number keys
+            if (k === '2' || k === 'ArrowUp' || c === 38) { cursorY -= step; updateCursor(); e.preventDefault(); return; }
+            if (k === '8' || k === 'ArrowDown' || c === 40) { cursorY += step; updateCursor(); e.preventDefault(); return; }
+            if (k === '4' || k === 'ArrowLeft' || c === 37) { cursorX -= step; updateCursor(); e.preventDefault(); return; }
+            if (k === '6' || k === 'ArrowRight' || c === 39) { cursorX += step; updateCursor(); e.preventDefault(); return; }
+
+            // Click - D-pad center / Enter / MicrophoneToggle (keyCode 0 on KaiOS)
+            // Use debounce to prevent key repeat causing infinite clicks
+            if (k === 'Enter' || k === 'MicrophoneToggle' || c === 13 || (c === 0 && k !== '')) {
+                if (!clickPending) {
+                    clickPending = true;
+                    log('CLICK!');
+                    click();
+                    setTimeout(function() { clickPending = false; }, 500);
+                }
+                e.preventDefault();
+                return;
+            }
+
+            // Play/Pause video with 5
+            if (k === '5') { playPauseVideo(); e.preventDefault(); return; }
+
+            // Text bar toggle with #
+            if (k === '#' || c === 163 || c === 35) { toggleTextBar(); e.preventDefault(); return; }
+
+            // Typing mode toggle with *
+            if (k === '*' || c === 42) { toggleTypingMode(); e.preventDefault(); return; }
+
+            // Scroll: 3=PageUp, 9=PageDown
+            if (k === '3') { scroll(-150); e.preventDefault(); return; }
+            if (k === '9') { scroll(150); e.preventDefault(); return; }
+
+            // Back with 7
+            if (k === '7' || c === 27) { goBack(); e.preventDefault(); return; }
+
+            // Home with 0
+            if (k === '0') { goHome(); e.preventDefault(); return; }
+
+        }, true);
+
+    })();
+    </script>
+</body>
+</html>

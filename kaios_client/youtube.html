@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=240, height=320, user-scalable=no">
+    <title>YouTube Player</title>
+    <style>
+    * { margin: 0; padding: 0; }
+    html, body { width: 240px; height: 320px; overflow: hidden; font-family: Arial, sans-serif; background: #0f0f0f; color: #fff; }
+    .container { width: 240px; height: 320px; position: relative; }
+    .header { width: 240px; height: 28px; background: #282828; padding: 4px 8px; line-height: 20px; }
+    .logo { color: #ff0000; font-weight: bold; font-size: 12px; float: left; }
+    .logo span { color: #fff; }
+    .mode-toggle { float: right; font-size: 9px; color: #fff; background: #ff0000; padding: 2px 6px; border-radius: 8px; }
+    .results { width: 240px; height: 268px; background: #0f0f0f; overflow-y: auto; padding: 4px; }
+    .video-item { width: 228px; height: 52px; background: #181818; margin-bottom: 4px; padding: 6px; border-radius: 4px; }
+    .video-item.selected { background: #3ea6ff; }
+    .video-title { font-size: 10px; color: #fff; margin-bottom: 2px; overflow: hidden; }
+    .video-channel { font-size: 9px; color: #aaa; margin-bottom: 2px; }
+    .video-desc { font-size: 8px; color: #666; }
+    .controls-bar { position: absolute; bottom: 0; left: 0; width: 240px; height: 24px; background: #282828; padding: 4px 6px; font-size: 8px; color: #888; }
+    .custom-url { width: 228px; height: 44px; background: #282828; margin-bottom: 4px; padding: 6px; border-radius: 4px; }
+    .custom-url.selected { background: #3ea6ff; }
+    .custom-url input { width: 216px; height: 24px; background: #303030; border: 1px solid #505050; border-radius: 2px; color: #fff; font-size: 10px; padding: 0 6px; }
+    .custom-url-label { font-size: 8px; color: #aaa; margin-bottom: 2px; }
+    .clear { clear: both; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">▶ <span>YouTube</span></div>
+            <div class="mode-toggle" id="modeToggle">Stream</div>
+            <div class="clear"></div>
+        </div>
+        <div class="results" id="results">
+            <div class="custom-url selected" id="item0">
+                <div class="custom-url-label">Enter Video ID or URL:</div>
+                <input type="text" id="customUrl" placeholder="dQw4w9WgXcQ">
+            </div>
+            <div class="video-item" id="item1" data-id="dQw4w9WgXcQ">
+                <div class="video-title">Rick Astley - Never Gonna Give You Up</div>
+                <div class="video-channel">Rick Astley - 1.5B views</div>
+                <div class="video-desc">The classic 80s hit</div>
+            </div>
+            <div class="video-item" id="item2" data-id="9bZkp7q19f0">
+                <div class="video-title">PSY - GANGNAM STYLE</div>
+                <div class="video-channel">officialpsy - 5B views</div>
+                <div class="video-desc">K-pop viral sensation</div>
+            </div>
+            <div class="video-item" id="item3" data-id="kJQP7kiw5Fk">
+                <div class="video-title">Luis Fonsi - Despacito</div>
+                <div class="video-channel">Luis Fonsi - 8B views</div>
+                <div class="video-desc">Most viewed video ever</div>
+            </div>
+            <div class="video-item" id="item4" data-id="JGwWNGJdvx8">
+                <div class="video-title">Ed Sheeran - Shape of You</div>
+                <div class="video-channel">Ed Sheeran - 6B views</div>
+                <div class="video-desc">Pop hit from 2017</div>
+            </div>
+            <div class="video-item" id="item5" data-id="fJ9rUzIMcZQ">
+                <div class="video-title">Queen - Bohemian Rhapsody</div>
+                <div class="video-channel">Queen Official - 1.8B views</div>
+                <div class="video-desc">Rock masterpiece</div>
+            </div>
+        </div>
+        <div class="controls-bar">2/8:Nav | OK:Play | #:Mode | 0:Back</div>
+    </div>
+    <script>
+    (function() {
+        var customUrl = document.getElementById('customUrl');
+        var modeToggle = document.getElementById('modeToggle');
+        var totalItems = 6;
+        var selectedIndex = 0;
+        var playMode = 'stream';
+        
+        try {
+            playMode = localStorage.getItem('youtube_play_mode') || 'stream';
+        } catch(e) {}
+        
+        var server = '';
+        try {
+            server = localStorage.getItem('jiomosa_server');
+        } catch(e) {}
+        if (!server) {
+            server = window.location.protocol + '//' + window.location.host;
+            try { localStorage.setItem('jiomosa_server', server); } catch(e) {}
+        }
+
+        function updateModeDisplay() {
+            if (playMode === 'stream') {
+                modeToggle.innerHTML = 'Stream';
+                modeToggle.style.background = '#ff0000';
+            } else {
+                modeToggle.innerHTML = 'Cloud';
+                modeToggle.style.background = '#3ea6ff';
+            }
+        }
+        
+        function toggleMode() {
+            playMode = (playMode === 'stream') ? 'cloud' : 'stream';
+            try { localStorage.setItem('youtube_play_mode', playMode); } catch(e) {}
+            updateModeDisplay();
+        }
+
+        function updateSelection() {
+            for (var i = 0; i < totalItems; i++) {
+                var el = document.getElementById('item' + i);
+                if (el) {
+                    if (i === 0) {
+                        el.className = (i === selectedIndex) ? 'custom-url selected' : 'custom-url';
+                    } else {
+                        el.className = (i === selectedIndex) ? 'video-item selected' : 'video-item';
+                    }
+                }
+            }
+        }
+
+        function playVideo(videoId) {
+            if (!videoId) return;
+            if (playMode === 'stream') {
+                window.location.href = 'video_player.html?v=' + videoId;
+            } else {
+                var url = 'https://m.youtube.com/watch?v=' + videoId;
+                try { localStorage.setItem('jiomosa_url', url); } catch(e) {}
+                window.location.href = 'browser.html';
+            }
+        }
+
+        function getVideoIdFromInput() {
+            var val = customUrl.value;
+            if (!val) return null;
+            val = val.replace(/^\s+|\s+$/g, '');
+            if (!val) return null;
+            var patterns = [/v=([a-zA-Z0-9_-]{11})/, /youtu\.be\/([a-zA-Z0-9_-]{11})/, /embed\/([a-zA-Z0-9_-]{11})/, /shorts\/([a-zA-Z0-9_-]{11})/];
+            for (var i = 0; i < patterns.length; i++) {
+                var m = val.match(patterns[i]);
+                if (m) return m[1];
+            }
+            if (/^[a-zA-Z0-9_-]{11}$/.test(val)) return val;
+            return null;
+        }
+
+        document.addEventListener('keydown', function(e) {
+            var k = e.key || '';
+            var c = e.keyCode || 0;
+
+            if (k === '#') {
+                toggleMode();
+                if (e.preventDefault) e.preventDefault();
+                return false;
+            }
+
+            if (selectedIndex === 0) {
+                if (k === 'Enter' || c === 13 || k === 'MicrophoneToggle' || c === 0) {
+                    var videoId = getVideoIdFromInput();
+                    if (videoId) {
+                        playVideo(videoId);
+                    }
+                    if (e.preventDefault) e.preventDefault();
+                    return false;
+                }
+                if (k === '8' || k === 'ArrowDown' || c === 40) {
+                    selectedIndex = 1;
+                    updateSelection();
+                    customUrl.blur();
+                    if (e.preventDefault) e.preventDefault();
+                    return false;
+                }
+                if (k === '0' || (k === 'Backspace' && customUrl.value === '')) {
+                    window.location.href = 'launcher.html';
+                    if (e.preventDefault) e.preventDefault();
+                    return false;
+                }
+                return;
+            }
+
+            if (k === '2' || k === 'ArrowUp' || c === 38) {
+                if (selectedIndex > 0) {
+                    selectedIndex = selectedIndex - 1;
+                    updateSelection();
+                    if (selectedIndex === 0) {
+                        customUrl.focus();
+                    }
+                }
+                if (e.preventDefault) e.preventDefault();
+                return false;
+            }
+            if (k === '8' || k === 'ArrowDown' || c === 40) {
+                if (selectedIndex < totalItems - 1) {
+                    selectedIndex = selectedIndex + 1;
+                    updateSelection();
+                }
+                if (e.preventDefault) e.preventDefault();
+                return false;
+            }
+
+            if (k === '5' || k === 'Enter' || k === 'MicrophoneToggle' || c === 13 || c === 0) {
+                var selected = document.getElementById('item' + selectedIndex);
+                if (selected) {
+                    var videoId = selected.getAttribute('data-id');
+                    if (videoId) {
+                        playVideo(videoId);
+                    }
+                }
+                if (e.preventDefault) e.preventDefault();
+                return false;
+            }
+
+            if (k === '0' || k === 'Backspace' || c === 8) {
+                window.location.href = 'launcher.html';
+                if (e.preventDefault) e.preventDefault();
+                return false;
+            }
+        }, true);
+
+        updateModeDisplay();
+        updateSelection();
+        if (customUrl && customUrl.focus) customUrl.focus();
+    })();
+    </script>
+</body>
+</html>

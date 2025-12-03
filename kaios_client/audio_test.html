@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=240, height=320, user-scalable=no">
+    <title>Audio Test</title>
+    <style>
+    * { margin: 0; padding: 0; -moz-box-sizing: border-box; box-sizing: border-box; }
+    html, body { width: 240px; height: 320px; overflow: hidden; font-family: Arial, sans-serif; background: #1a1a2e; color: #fff; }
+    .container { width: 240px; height: 320px; padding: 10px; }
+    .header { text-align: center; margin-bottom: 15px; }
+    .header h1 { font-size: 14px; color: #e94560; margin-bottom: 4px; }
+    .header p { font-size: 9px; color: #888; }
+    .status-box { background: #16213e; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+    .status-row { display: -moz-box; display: flex; -moz-box-pack: justify; justify-content: space-between; margin-bottom: 6px; font-size: 10px; }
+    .status-label { color: #888; }
+    .status-value { color: #0f0; font-weight: bold; }
+    .status-value.error { color: #f00; }
+    .status-value.waiting { color: #ff0; }
+    .visualizer { width: 100%; height: 60px; background: #0f0f23; border-radius: 6px; margin-bottom: 10px; overflow: hidden; position: relative; }
+    .bars { display: -moz-box; display: flex; -moz-box-align: end; align-items: flex-end; -moz-box-pack: center; justify-content: center; height: 100%; padding: 5px; }
+    .bar { width: 8px; background: #e94560; margin: 0 2px; border-radius: 2px 2px 0 0; -moz-animation: bounce 0.5s ease infinite; animation: bounce 0.5s ease infinite; }
+    .bar:nth-child(1) { height: 20px; -moz-animation-delay: 0s; animation-delay: 0s; }
+    .bar:nth-child(2) { height: 35px; -moz-animation-delay: 0.1s; animation-delay: 0.1s; }
+    .bar:nth-child(3) { height: 25px; -moz-animation-delay: 0.2s; animation-delay: 0.2s; }
+    .bar:nth-child(4) { height: 40px; -moz-animation-delay: 0.3s; animation-delay: 0.3s; }
+    .bar:nth-child(5) { height: 30px; -moz-animation-delay: 0.4s; animation-delay: 0.4s; }
+    .bar:nth-child(6) { height: 45px; -moz-animation-delay: 0.15s; animation-delay: 0.15s; }
+    .bar:nth-child(7) { height: 20px; -moz-animation-delay: 0.25s; animation-delay: 0.25s; }
+    .bar:nth-child(8) { height: 35px; -moz-animation-delay: 0.35s; animation-delay: 0.35s; }
+    @-moz-keyframes bounce { 0%, 100% { -moz-transform: scaleY(1); } 50% { -moz-transform: scaleY(0.5); } }
+    @keyframes bounce { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(0.5); } }
+    .paused .bar { -moz-animation: none; animation: none; background: #444; }
+    .track-info { background: #16213e; border-radius: 8px; padding: 10px; margin-bottom: 10px; text-align: center; }
+    .track-title { font-size: 11px; color: #fff; margin-bottom: 4px; }
+    .track-artist { font-size: 9px; color: #888; }
+    .controls { text-align: center; font-size: 8px; color: #666; margin-top: 10px; }
+    .btn-row { display: -moz-box; display: flex; -moz-box-pack: center; justify-content: center; margin-bottom: 8px; }
+    .btn { width: 60px; height: 28px; background: #e94560; border: none; border-radius: 4px; color: #fff; font-size: 10px; margin: 0 4px; }
+    .btn.secondary { background: #16213e; border: 1px solid #e94560; }
+    .log { background: #0f0f23; border-radius: 4px; padding: 6px; height: 50px; overflow-y: auto; font-size: 8px; color: #888; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Audio Streaming Test</h1>
+            <p>Cloud Browser Audio Test</p>
+        </div>
+        
+        <div class="status-box">
+            <div class="status-row">
+                <span class="status-label">Connection:</span>
+                <span class="status-value waiting" id="connStatus">Connecting...</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">Audio:</span>
+                <span class="status-value waiting" id="audioStatus">Waiting...</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">Latency:</span>
+                <span class="status-value" id="latency">--ms</span>
+            </div>
+        </div>
+        
+        <div class="visualizer paused" id="visualizer">
+            <div class="bars">
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+            </div>
+        </div>
+        
+        <div class="track-info">
+            <div class="track-title" id="trackTitle">Test Tone Generator</div>
+            <div class="track-artist">440Hz Sine Wave</div>
+        </div>
+        
+        <div class="btn-row">
+            <button class="btn" id="playBtn">PLAY</button>
+            <button class="btn secondary" id="stopBtn">STOP</button>
+        </div>
+        
+        <div class="log" id="log"></div>
+        
+        <div class="controls">OK:Play/Pause | 0:Back</div>
+    </div>
+    
+    <script>
+    (function() {
+        var server = localStorage.getItem('jiomosa_server');
+        if (!server) {
+            server = window.location.protocol + '//' + window.location.host;
+            localStorage.setItem('jiomosa_server', server);
+        }
+        
+        var connStatus = document.getElementById('connStatus');
+        var audioStatus = document.getElementById('audioStatus');
+        var latencyEl = document.getElementById('latency');
+        var visualizer = document.getElementById('visualizer');
+        var trackTitle = document.getElementById('trackTitle');
+        var logEl = document.getElementById('log');
+        var playBtn = document.getElementById('playBtn');
+        var stopBtn = document.getElementById('stopBtn');
+        
+        var audioCtx = null;
+        var isPlaying = false;
+        var sessionId = 'audio_test_' + Date.now();
+        
+        function log(msg) {
+            var time = new Date().toLocaleTimeString();
+            logEl.innerHTML = '[' + time + '] ' + msg + '<br>' + logEl.innerHTML;
+            logEl.innerHTML = logEl.innerHTML.substring(0, 500);
+        }
+        
+        function testConnection() {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', server + '/health', true);
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200) {
+                        connStatus.textContent = 'Connected';
+                        connStatus.className = 'status-value';
+                        log('Server connected');
+                    } else {
+                        connStatus.textContent = 'Failed';
+                        connStatus.className = 'status-value error';
+                        log('Connection failed');
+                    }
+                }
+            };
+            xhr.send();
+        }
+        
+        function playTestTone() {
+            if (isPlaying) return;
+            
+            try {
+                // Create audio context
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Create oscillator for test tone
+                var oscillator = audioCtx.createOscillator();
+                var gainNode = audioCtx.createGain();
+                
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                
+                oscillator.start();
+                
+                isPlaying = true;
+                visualizer.className = 'visualizer';
+                audioStatus.textContent = 'Playing';
+                audioStatus.className = 'status-value';
+                playBtn.textContent = 'PAUSE';
+                log('Audio playing (440Hz tone)');
+                
+                // Store oscillator for stopping
+                window.currentOscillator = oscillator;
+                window.currentGain = gainNode;
+                
+                // Measure latency
+                var startTime = Date.now();
+                setTimeout(function() {
+                    latencyEl.textContent = (Date.now() - startTime) + 'ms';
+                }, 50);
+                
+            } catch(e) {
+                log('Audio error: ' + e.message);
+                audioStatus.textContent = 'Error';
+                audioStatus.className = 'status-value error';
+            }
+        }
+        
+        function stopAudio() {
+            if (!isPlaying) return;
+            
+            try {
+                if (window.currentOscillator) {
+                    window.currentOscillator.stop();
+                    window.currentOscillator = null;
+                }
+                if (audioCtx) {
+                    audioCtx.close();
+                    audioCtx = null;
+                }
+            } catch(e) {}
+            
+            isPlaying = false;
+            visualizer.className = 'visualizer paused';
+            audioStatus.textContent = 'Stopped';
+            audioStatus.className = 'status-value waiting';
+            playBtn.textContent = 'PLAY';
+            log('Audio stopped');
+        }
+        
+        function togglePlay() {
+            if (isPlaying) {
+                stopAudio();
+            } else {
+                playTestTone();
+            }
+        }
+        
+        playBtn.onclick = togglePlay;
+        stopBtn.onclick = stopAudio;
+        
+        document.addEventListener('keydown', function(e) {
+            var k = e.key || '';
+            var c = e.keyCode || 0;
+            
+            if (k === '5' || k === 'Enter' || k === 'MicrophoneToggle' || c === 13 || c === 0) {
+                togglePlay();
+                e.preventDefault();
+                return;
+            }
+            
+            if (k === '0' || k === 'Backspace' || c === 8) {
+                stopAudio();
+                window.location.href = 'launcher.html';
+                e.preventDefault();
+                return;
+            }
+        }, true);
+        
+        // Auto-connect on load
+        testConnection();
+        log('Audio test ready');
+        
+    })();
+    </script>
+</body>
+</html>
