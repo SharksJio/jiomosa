@@ -1,10 +1,10 @@
-# Jiomosa - Cloud Website Renderer
+# Jio Cloud Apps - Cloud Website Renderer
 
 This is a proof-of-concept (PoC) solution combining Apache Guacamole and Selenium to render rich websites with minimal latency, designed for low-end devices like RTOS systems (e.g., ThreadX) with limited resources (512MB RAM).
 
 ## Project Overview
 
-Jiomosa enables rendering of complex, resource-intensive websites on powerful cloud infrastructure and streams the visual output to low-end devices. The architecture uses Docker containers orchestrating Selenium Grid, Chrome browser, Apache Guacamole, and a Python Flask renderer service.
+Jio Cloud Apps enables rendering of complex, resource-intensive websites on powerful cloud infrastructure and streams the visual output to low-end devices. The architecture uses Docker containers orchestrating Selenium Grid, Chrome browser, Apache Guacamole, and a Python Flask renderer service.
 
 ## Development Workflow
 

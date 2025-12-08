@@ -162,9 +162,6 @@
 
         function click() {
             if (!connected) { log('Not connected'); return; }
-            // Visual feedback - flash cursor
-            cursor.className = 'cursor click';
-            setTimeout(function() { cursor.className = 'cursor'; }, 200);
             // Client displays 240x296, server renders 320x480 but sends 240x296 resized
             // Map from display (240x296) to original render space (320x480)
             var sx = Math.round(cursorX * (320 / clientW));  // 240 -> 320
@@ -269,23 +266,8 @@
             var xhr = new XMLHttpRequest();
             xhr.open('POST', server + '/api/session/' + sessionId + '/execute', true);
             xhr.setRequestHeader('Content-Type', 'application/json');
-            xhr.onreadystatechange = function() {
-                if (xhr.readyState === 4 && xhr.status === 200) {
-                    try {
-                        var r = JSON.parse(xhr.responseText);
-                        // If we're at start page (history length <= 1 or 2), go to launcher
-                        if (r.result && r.result.atStart) {
-                            goHome();
-                        } else {
-                            setTimeout(fetchFrame, 500);
-                        }
-                    } catch(e) {
-                        setTimeout(fetchFrame, 500);
-                    }
-                }
-            };
-            // Check history length before going back - if at start, return flag
-            xhr.send(JSON.stringify({ script: 'if (window.history.length <= 2) { return {atStart: true}; } else { window.history.back(); return {atStart: false}; }' }));
+            xhr.send(JSON.stringify({ script: 'window.history.back()' }));
+            setTimeout(fetchFrame, 500);
         }
 
         function goHome() {

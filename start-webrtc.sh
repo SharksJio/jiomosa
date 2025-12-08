@@ -1,9 +1,9 @@
 #!/bin/bash
-# Quick start script for Jiomosa WebRTC
+# Quick start script for Jio Cloud Apps WebRTC
 
 set -e
 
-echo "🚀 Jiomosa WebRTC - Quick Start"
+echo "🚀 Jio Cloud Apps WebRTC - Quick Start"
 echo "================================"
 echo ""
 
@@ -61,7 +61,7 @@ fi
 
 echo ""
 echo "================================"
-echo "🎉 Jiomosa WebRTC is running!"
+echo "🎉 Jio Cloud Apps WebRTC is running!"
 echo "================================"
 echo ""
 echo "📱 WebApp (User Interface):"

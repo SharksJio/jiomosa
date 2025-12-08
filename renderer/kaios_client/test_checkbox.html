@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=240, height=320, user-scalable=no">
+    <title>Checkbox Test</title>
+    <style>
+        body { font-family: Arial; font-size: 16px; padding: 20px; background: #fff; }
+        .box { margin: 20px 0; padding: 15px; background: #f0f0f0; border-radius: 5px; }
+        input[type="checkbox"] { width: 30px; height: 30px; margin-right: 10px; }
+        label { font-size: 18px; }
+        .status { margin-top: 20px; padding: 10px; background: #e0e0e0; }
+    </style>
+</head>
+<body>
+    <h2>Checkbox Test</h2>
+    
+    <div class="box">
+        <input type="checkbox" id="cb1" onchange="updateStatus()">
+        <label for="cb1">Option 1</label>
+    </div>
+    
+    <div class="box">
+        <input type="checkbox" id="cb2" onchange="updateStatus()">
+        <label for="cb2">Option 2</label>
+    </div>
+    
+    <div class="box">
+        <input type="checkbox" id="cb3" checked onchange="updateStatus()">
+        <label for="cb3">Option 3 (checked)</label>
+    </div>
+    
+    <div class="status" id="status">
+        Status: None checked
+    </div>
+    
+    <script>
+        function updateStatus() {
+            var checked = [];
+            if (document.getElementById('cb1').checked) checked.push('1');
+            if (document.getElementById('cb2').checked) checked.push('2');
+            if (document.getElementById('cb3').checked) checked.push('3');
+            document.getElementById('status').textContent = 'Checked: ' + (checked.length ? checked.join(', ') : 'None');
+        }
+        updateStatus();
+    </script>
+</body>
+</html>

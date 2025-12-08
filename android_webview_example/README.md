@@ -4,7 +4,7 @@ This directory contains a complete Android WebView implementation with stealth p
 
 ## Overview
 
-Based on the Jiomosa server-side Playwright stealth implementation, this Android WebView example applies similar fingerprint evasion techniques on the client side to enable access to protected websites.
+Based on the Jio Cloud Apps server-side Playwright stealth implementation, this Android WebView example applies similar fingerprint evasion techniques on the client side to enable access to protected websites.
 
 ## Feasibility Analysis
 

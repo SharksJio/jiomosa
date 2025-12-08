@@ -1,6 +1,6 @@
-# Jiomosa Android WebApp
+# Jio Cloud Apps Android WebApp
 
-A mobile-friendly web application designed to be loaded in an Android WebView. It provides an "all apps" style launcher interface where users can tap website icons to browse cloud-rendered websites through Jiomosa.
+A mobile-friendly web application designed to be loaded in an Android WebView. It provides an "all apps" style launcher interface where users can tap website icons to browse cloud-rendered websites through Jio Cloud Apps.
 
 ## Features
 

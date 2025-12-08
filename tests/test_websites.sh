@@ -14,6 +14,7 @@ declare -a websites=(
     "https://example.com"
     "https://www.wikipedia.org"
     "https://github.com"
+    "https://news.google.com"
 )
 
 # Test each website

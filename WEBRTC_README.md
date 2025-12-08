@@ -1,10 +1,10 @@
-# Jiomosa WebRTC - Production-Quality Cloud Browser
+# Jio Cloud Apps WebRTC - Production-Quality Cloud Browser
 
 **Modern, low-latency WebRTC streaming solution for Android devices with 1GB RAM**
 
 ## 🎯 Overview
 
-Jiomosa WebRTC is a next-generation cloud browser streaming solution that uses **WebRTC** technology to deliver high-performance, low-latency website rendering to Android devices. Built from the ground up with modern technologies and production-quality architecture.
+Jio Cloud Apps WebRTC is a next-generation cloud browser streaming solution that uses **WebRTC** technology to deliver high-performance, low-latency website rendering to Android devices. Built from the ground up with modern technologies and production-quality architecture.
 
 ### Key Features
 

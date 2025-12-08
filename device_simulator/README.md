@@ -1,10 +1,10 @@
-# Jiomosa Device Simulator
+# Jio Cloud Apps Device Simulator
 
 A standalone test application that emulates low-end devices (like ThreadX RTOS, IoT devices, thin clients) to demonstrate how cloud-rendered websites can be displayed in a WebView without showing any browser UI.
 
 ## Overview
 
-The Device Simulator provides a realistic testing environment for understanding how Jiomosa works on resource-constrained devices. It simulates different hardware profiles and displays only website content through a WebView-like interface, hiding all browser chrome and UI elements.
+The Device Simulator provides a realistic testing environment for understanding how Jio Cloud Apps works on resource-constrained devices. It simulates different hardware profiles and displays only website content through a WebView-like interface, hiding all browser chrome and UI elements.
 
 ## Key Features
 

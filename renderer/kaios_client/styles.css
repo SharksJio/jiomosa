@@ -1,0 +1,403 @@
+/* KaiOS Cloud Browser - Gecko 48 Compatible Styles */
+/* All styles use -moz- prefixes where needed for Firefox 48 compatibility */
+
+* {
+    margin: 0;
+    padding: 0;
+    -moz-box-sizing: border-box;
+    box-sizing: border-box;
+}
+
+html, body {
+    width: 240px;
+    height: 320px;
+    overflow: hidden;
+    font-family: "Open Sans", Arial, sans-serif;
+    font-size: 12px;
+    background: #000;
+    color: #fff;
+}
+
+/* Launcher Page Styles */
+.launcher-container {
+    width: 240px;
+    height: 320px;
+    background: -moz-linear-gradient(top, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    background: linear-gradient(to bottom, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    overflow: hidden;
+}
+
+.launcher-header {
+    width: 240px;
+    height: 40px;
+    background: rgba(0, 0, 0, 0.3);
+    text-align: center;
+    padding: 8px;
+}
+
+.launcher-title {
+    font-size: 16px;
+    font-weight: bold;
+    color: #e94560;
+}
+
+.launcher-subtitle {
+    font-size: 9px;
+    color: #aaa;
+    margin-top: 2px;
+}
+
+.apps-grid {
+    width: 240px;
+    height: 230px;
+    padding: 10px;
+    overflow-y: auto;
+}
+
+/* Float-based grid for Gecko 48 (no CSS Grid) */
+.app-row {
+    width: 100%;
+    height: auto;
+    overflow: hidden;
+}
+
+.app-row:after {
+    content: "";
+    display: table;
+    clear: both;
+}
+
+.app-item {
+    float: left;
+    width: 70px;
+    height: 70px;
+    margin: 3px;
+    text-align: center;
+    padding: 8px 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid transparent;
+    -moz-border-radius: 8px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.app-item.selected {
+    background: rgba(233, 69, 96, 0.3);
+    border-color: #e94560;
+    -moz-box-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+    box-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+}
+
+.app-icon {
+    font-size: 28px;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.app-name {
+    font-size: 9px;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.launcher-footer {
+    width: 240px;
+    height: 50px;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 5px;
+}
+
+.control-hints {
+    text-align: center;
+    font-size: 8px;
+    color: #888;
+    line-height: 1.4;
+}
+
+.hint-row {
+    margin-bottom: 2px;
+}
+
+.hint-key {
+    display: inline-block;
+    background: #333;
+    padding: 1px 4px;
+    -moz-border-radius: 2px;
+    border-radius: 2px;
+    margin: 0 2px;
+    font-weight: bold;
+    color: #e94560;
+}
+
+/* Browser Viewer Styles */
+.browser-container {
+    width: 240px;
+    height: 320px;
+    background: #000;
+    position: relative;
+    overflow: hidden;
+}
+
+.video-frame {
+    width: 240px;
+    height: 280px;
+    background: #111;
+    position: relative;
+}
+
+.video-frame img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+/* Software cursor overlay */
+.cursor-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 240px;
+    height: 280px;
+    pointer-events: none;
+    z-index: 100;
+}
+
+.software-cursor {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+    z-index: 101;
+}
+
+/* Arrow cursor using CSS borders */
+.cursor-arrow {
+    width: 0;
+    height: 0;
+    border-left: 8px solid #fff;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    -moz-transform: rotate(-45deg);
+    transform: rotate(-45deg);
+    /* Shadow for visibility */
+    filter: drop-shadow(1px 1px 1px #000);
+}
+
+.cursor-arrow:after {
+    content: "";
+    position: absolute;
+    left: -9px;
+    top: -6px;
+    width: 0;
+    height: 0;
+    border-left: 10px solid #000;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    z-index: -1;
+}
+
+/* Status bar at bottom */
+.status-bar {
+    width: 240px;
+    height: 40px;
+    background: rgba(0, 0, 0, 0.9);
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    padding: 4px 8px;
+}
+
+.status-url {
+    font-size: 9px;
+    color: #aaa;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+}
+
+.status-controls {
+    font-size: 7px;
+    color: #666;
+    text-align: center;
+}
+
+/* Loading overlay */
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 240px;
+    height: 280px;
+    background: rgba(0, 0, 0, 0.8);
+    display: none;
+    z-index: 200;
+}
+
+.loading-overlay.visible {
+    display: block;
+}
+
+.loading-spinner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 30px;
+    height: 30px;
+    margin: -15px 0 0 -15px;
+    border: 3px solid #333;
+    border-top-color: #e94560;
+    -moz-border-radius: 50%;
+    border-radius: 50%;
+    -moz-animation: spin 1s linear infinite;
+    animation: spin 1s linear infinite;
+}
+
+@-moz-keyframes spin {
+    0% { -moz-transform: rotate(0deg); }
+    100% { -moz-transform: rotate(360deg); }
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-text {
+    position: absolute;
+    top: 60%;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    font-size: 11px;
+    color: #888;
+}
+
+/* Audio indicator */
+.audio-indicator {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 16px;
+    height: 16px;
+    background: rgba(0, 0, 0, 0.5);
+    -moz-border-radius: 3px;
+    border-radius: 3px;
+    text-align: center;
+    line-height: 16px;
+    font-size: 10px;
+    z-index: 50;
+}
+
+.audio-indicator.muted {
+    color: #f00;
+}
+
+.audio-indicator.playing {
+    color: #0f0;
+}
+
+/* Connection status */
+.connection-status {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    width: 8px;
+    height: 8px;
+    -moz-border-radius: 50%;
+    border-radius: 50%;
+    z-index: 50;
+}
+
+.connection-status.connected {
+    background: #0f0;
+}
+
+.connection-status.disconnected {
+    background: #f00;
+}
+
+.connection-status.connecting {
+    background: #ff0;
+    -moz-animation: blink 1s ease-in-out infinite;
+    animation: blink 1s ease-in-out infinite;
+}
+
+@-moz-keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* Error message */
+.error-message {
+    position: absolute;
+    top: 50%;
+    left: 10px;
+    right: 10px;
+    text-align: center;
+    color: #f00;
+    font-size: 11px;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 10px;
+    -moz-border-radius: 5px;
+    border-radius: 5px;
+    display: none;
+    z-index: 300;
+}
+
+.error-message.visible {
+    display: block;
+}
+
+/* URL input (for address bar mode) */
+.url-input-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 240px;
+    height: 320px;
+    background: rgba(0, 0, 0, 0.95);
+    display: none;
+    z-index: 400;
+    padding: 10px;
+}
+
+.url-input-container.visible {
+    display: block;
+}
+
+.url-input-label {
+    font-size: 12px;
+    color: #fff;
+    margin-bottom: 10px;
+    display: block;
+}
+
+.url-input {
+    width: 220px;
+    height: 30px;
+    background: #333;
+    border: 1px solid #555;
+    -moz-border-radius: 4px;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 11px;
+    padding: 0 8px;
+}
+
+.url-input:focus {
+    border-color: #e94560;
+    outline: none;
+}
+
+/* Softkeys styling */
+.softkeys {
+    display: none; /* KaiOS provides its own softkeys */
+}

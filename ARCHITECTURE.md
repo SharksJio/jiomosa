@@ -1,8 +1,8 @@
-# Jiomosa Architecture
+# Jio Cloud Apps Architecture
 
 ## Overview
 
-Jiomosa is a cloud-based website rendering solution that uses **WebSocket streaming** to enable low-end devices (like RTOS systems with 512MB RAM) to access modern, resource-intensive websites by offloading rendering to powerful cloud infrastructure.
+Jio Cloud Apps is a cloud-based website rendering solution that uses **WebSocket streaming** to enable low-end devices (like RTOS systems with 512MB RAM) to access modern, resource-intensive websites by offloading rendering to powerful cloud infrastructure.
 
 ## Architecture Diagram
 
@@ -508,4 +508,4 @@ Example architecture:
 
 ## Conclusion
 
-Jiomosa provides an efficient, scalable solution for rendering modern websites on resource-constrained devices through WebSocket-based real-time streaming. The architecture is simple, performant, and well-suited for embedded systems, IoT devices, and mobile applications.
+Jio Cloud Apps provides an efficient, scalable solution for rendering modern websites on resource-constrained devices through WebSocket-based real-time streaming. The architecture is simple, performant, and well-suited for embedded systems, IoT devices, and mobile applications.

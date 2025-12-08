@@ -1,4 +1,4 @@
-# 🌐 Jiomosa - Cloud Browser for Resource-Constrained Devices
+# 🌐 Jio Cloud Apps - Cloud Browser for Resource-Constrained Devices
 
 **Stream websites from powerful cloud servers to low-end devices with minimal latency**
 
@@ -8,7 +8,7 @@
 
 ## 🎯 Choose Your Solution
 
-Jiomosa offers **two streaming solutions** optimized for different use cases:
+Jio Cloud Apps offers **two streaming solutions** optimized for different use cases:
 
 ### 🚀 WebRTC Solution (NEW - Recommended for Production)
 

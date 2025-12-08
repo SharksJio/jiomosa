@@ -1,6 +1,6 @@
-# Jiomosa Deployment & Testing Guide
+# Jio Cloud Apps Deployment & Testing Guide
 
-This guide explains where and how to deploy Jiomosa for testing websites.
+This guide explains where and how to deploy Jio Cloud Apps for testing websites.
 
 ## Deployment Options
 

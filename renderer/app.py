@@ -1,5 +1,5 @@
 """
-Jiomosa Renderer Service
+Jio Cloud Apps Renderer Service
 A service that coordinates Selenium browser sessions with WebSocket streaming for remote rendering
 """
 import os
@@ -125,6 +125,14 @@ class BrowserSession:
             chrome_options.add_argument('--window-size=320,480')
             chrome_options.add_argument('--window-position=0,0')
             
+            # Force light mode for better readability on small screens
+            chrome_options.add_argument('--force-color-profile=srgb')
+            chrome_options.add_argument('--disable-features=WebContentsForceDark')
+            
+            # Force videos to play inline, not download or open externally
+            chrome_options.add_argument('--autoplay-policy=no-user-gesture-required')
+            chrome_options.add_argument('--disable-features=PreloadMediaEngagementData,MediaEngagementBypassAutoplayPolicies')
+            
             # Kiosk mode: hide browser UI elements for clean web content view
             chrome_options.add_argument('--kiosk')
             chrome_options.add_argument('--start-maximized')
@@ -142,6 +150,12 @@ class BrowserSession:
                 'userAgent': mobile_user_agent
             }
             chrome_options.add_experimental_option('mobileEmulation', mobile_emulation)
+            
+            # Set preference to prefer light color scheme
+            prefs = {
+                'profile.default_content_setting_values.color_scheme': 1,  # 1 = light
+            }
+            chrome_options.add_experimental_option('prefs', prefs)
             
             # Hide browser chrome (address bar, tabs, etc.)
             chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
@@ -174,6 +188,20 @@ class BrowserSession:
                     return False, "Failed to initialize browser"
             
             logger.info(f"Loading URL: {url}")
+            
+            # For YouTube, use the light theme parameter
+            if 'youtube.com' in url and '?' in url:
+                url = url + '&theme=light'
+            elif 'youtube.com' in url:
+                url = url + '?theme=light'
+            
+            # For WhatsApp Web, force desktop mode
+            if 'web.whatsapp.com' in url:
+                # Temporarily change user agent to desktop for WhatsApp Web
+                desktop_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {'userAgent': desktop_user_agent})
+                logger.info("Set desktop user agent for WhatsApp Web")
+            
             self.driver.get(url)
             
             if wait_for_load:
@@ -181,6 +209,391 @@ class BrowserSession:
                 WebDriverWait(self.driver, timeout).until(
                     lambda d: d.execute_script('return document.readyState') == 'complete'
                 )
+            
+            # Force light mode by overriding CSS and injecting white background
+            try:
+                # For Wikipedia, Google News, and WhatsApp Web, use minimal CSS to avoid layout corruption
+                if 'wikipedia.org' in url or 'news.google.com' in url or 'web.whatsapp.com' in url:
+                    self.driver.execute_script("""
+                        // Minimal CSS for Wikipedia and Google News - just force light mode
+                        document.documentElement.style.colorScheme = 'light';
+                        document.documentElement.style.backgroundColor = '#ffffff';
+                        document.body.style.backgroundColor = '#ffffff';
+                        
+                        var style = document.createElement('style');
+                        style.id = 'jiomosa-light-mode';
+                        style.textContent = `
+                            /* Minimal overrides for Wikipedia, Google News, and WhatsApp Web */
+                            body { background-color: #ffffff !important; }
+                            html { background-color: #ffffff !important; }
+                        `;
+                        document.head.appendChild(style);
+                        
+                        // Disable zoom on the page - prevent browser zoom shortcuts
+                        document.body.style.zoom = '1';
+                        document.body.style.transform = 'none';
+                        document.documentElement.style.fontSize = '16px';
+                        
+                        // Prevent zoom via meta tag
+                        var metaViewport = document.querySelector('meta[name="viewport"]');
+                        if (metaViewport) {
+                            metaViewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+                        } else {
+                            var meta = document.createElement('meta');
+                            meta.name = 'viewport';
+                            meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+                            document.head.appendChild(meta);
+                        }
+                        
+                        // Block keyboard shortcuts that trigger zoom (Ctrl+, Ctrl-, numbers, etc.)
+                        document.addEventListener('keydown', function(e) {
+                            // Block Ctrl+Plus, Ctrl+Minus, Ctrl+0 (zoom shortcuts)
+                            if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '0' || e.key === '=' || e.keyCode === 187 || e.keyCode === 189 || e.keyCode === 48)) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                return false;
+                            }
+                            // Block key 3 (which Google News uses for zoom-in) - prevent default to let our scroll handler work
+                            if (e.key === '3' || e.keyCode === 51) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                return false;
+                            }
+                        }, true);
+                        
+                        // Prevent wheel zoom
+                        document.addEventListener('wheel', function(e) {
+                            if (e.ctrlKey) {
+                                e.preventDefault();
+                                return false;
+                            }
+                        }, { passive: false });
+                    """)
+                else:
+                    self.driver.execute_script("""
+                        // Force light color scheme
+                        document.documentElement.style.colorScheme = 'light';
+                        document.documentElement.style.backgroundColor = '#ffffff';
+                        document.body.style.backgroundColor = '#ffffff';
+                        
+                        // Add comprehensive CSS overrides for dark-themed sites
+                        var style = document.createElement('style');
+                        style.id = 'jiomosa-light-mode';
+                        style.textContent = `
+                            /* === DISABLE FOCUS OUTLINES AND SELECTION === */
+                            /* Remove ugly blue focus outlines and selection highlights */
+                            *:focus, *:focus-visible, *:focus-within {
+                                outline: none !important;
+                                box-shadow: none !important;
+                                -webkit-tap-highlight-color: transparent !important;
+                            }
+                            * {
+                                -webkit-tap-highlight-color: transparent !important;
+                                -webkit-touch-callout: none !important;
+                                -webkit-user-select: none !important;
+                                -moz-user-select: none !important;
+                                -ms-user-select: none !important;
+                                user-select: none !important;
+                            }
+                            /* Allow text selection in inputs */
+                            input, textarea, [contenteditable="true"] {
+                                -webkit-user-select: text !important;
+                                -moz-user-select: text !important;
+                                -ms-user-select: text !important;
+                                user-select: text !important;
+                            }
+                            /* Remove selection highlight color */
+                            ::selection {
+                                background: transparent !important;
+                            }
+                            ::-moz-selection {
+                                background: transparent !important;
+                            }
+                            /* Instagram specific - remove blue tap highlight */
+                            a, button, [role="button"], [tabindex] {
+                                -webkit-tap-highlight-color: transparent !important;
+                                outline: none !important;
+                            }
+                            /* Instagram - hide focus overlays and blue screens */
+                            [style*="background-color: rgb(0, 149, 246)"],
+                            [style*="background: rgb(0, 149, 246)"],
+                            [style*="rgba(0, 149, 246"],
+                            div[style*="position: fixed"][style*="inset: 0"],
+                            div[style*="position: fixed"][style*="top: 0"][style*="left: 0"][style*="right: 0"][style*="bottom: 0"] {
+                                display: none !important;
+                                visibility: hidden !important;
+                                opacity: 0 !important;
+                                pointer-events: none !important;
+                            }
+                            /* Hide any full-screen overlays */
+                            body > div[style*="position: fixed"]:not([role="dialog"]):not([aria-modal="true"]) {
+                                background-color: transparent !important;
+                            }
+                            /* Instagram specific blue color override */
+                            [style*="#0095f6"], [style*="rgb(0, 149, 246)"] {
+                                background-color: transparent !important;
+                            }
+                            
+                            :root { 
+                                color-scheme: light !important;
+                                /* YouTube variables */
+                                --yt-spec-base-background: #fff !important;
+                                --yt-spec-brand-background-primary: #fff !important;
+                                --yt-spec-brand-background-solid: #fff !important;
+                                --yt-spec-general-background-a: #fff !important;
+                                --yt-spec-general-background-b: #f9f9f9 !important;
+                                --yt-spec-general-background-c: #f1f1f1 !important;
+                            --yt-spec-text-primary: #030303 !important;
+                            --yt-spec-text-secondary: #606060 !important;
+                            /* Twitter/X variables */
+                            --background-color-primary: #fff !important;
+                            --background-color-secondary: #f7f9f9 !important;
+                            --text-color-primary: #0f1419 !important;
+                            --text-color-secondary: #536471 !important;
+                            /* Reddit variables */
+                            --background: #fff !important;
+                            --background-color: #fff !important;
+                            --newCommunityTheme-body: #fff !important;
+                            --newCommunityTheme-bodyText: #1c1c1c !important;
+                            --color-neutral-background: #fff !important;
+                            --color-neutral-content: #1c1c1c !important;
+                        }
+                        html, body {
+                            background-color: #ffffff !important;
+                            color: #000000 !important;
+                        }
+                        
+                        /* === YouTube === */
+                        ytd-app, #content, #page-manager {
+                            background-color: #ffffff !important;
+                        }
+                        
+                        /* === Twitter/X === */
+                        [data-testid="primaryColumn"], 
+                        [data-testid="sidebarColumn"],
+                        main, header, nav,
+                        .css-1dbjc4n, .r-14lw9ot, .r-kemksi {
+                            background-color: #ffffff !important;
+                        }
+                        /* Twitter login/signup popups */
+                        [role="dialog"], [role="modal"],
+                        [aria-modal="true"] {
+                            background-color: #ffffff !important;
+                        }
+                        /* Twitter dark text fix */
+                        [dir="ltr"] span, [dir="rtl"] span,
+                        article span, a span {
+                            color: inherit !important;
+                        }
+                        
+                        /* === Facebook === */
+                        ._li, ._5s61, ._2yav,
+                        [role="main"], [role="banner"], [role="navigation"],
+                        .__fb-dark-mode, .x1n2onr6, .x9f619,
+                        [style*="background-color: rgb(36, 37, 38)"],
+                        [style*="background-color: rgb(24, 25, 26)"] {
+                            background-color: #ffffff !important;
+                            color: #1c1e21 !important;
+                        }
+                        /* Facebook mobile */
+                        #viewport, #page, .mobile-viewport,
+                        ._52z5, ._5s61, ._li {
+                            background-color: #ffffff !important;
+                        }
+                        /* Facebook login page */
+                        ._8esj, ._9ay7, [data-visualcompletion="ignore"] {
+                            background-color: #ffffff !important;
+                        }
+                        
+                        /* === Reddit === */
+                        .SubredditVars-r-popular, .SubredditVars-r-all,
+                        shreddit-app, [data-redditstyle="true"],
+                        .ListingLayout-backgroundContainer,
+                        .Post, .Comment, .thing,
+                        #AppRouter-main-content,
+                        [class*="sidebar"], [class*="Sidebar"] {
+                            background-color: #ffffff !important;
+                            color: #1c1c1c !important;
+                        }
+                        /* Reddit new UI */
+                        body.v2, body[style*="background"],
+                        main, shreddit-app {
+                            background-color: #ffffff !important;
+                        }
+                        /* Reddit post cards */
+                        article, [data-testid="post-container"],
+                        faceplate-partial, faceplate-tracker {
+                            background-color: #ffffff !important;
+                        }
+                        
+                        /* === Wikipedia === */
+                        .mw-body, #content, #mw-content-text,
+                        .vector-body, .mw-page-container {
+                            background-color: #ffffff !important;
+                            color: #202122 !important;
+                        }
+                        
+                        /* === Google News === */
+                        c-wiz, [jscontroller], [jsname],
+                        .SbN5l, .bGIfxd, .Oc0wGc {
+                            background-color: #ffffff !important;
+                        }
+                        
+                        /* === Weather.com === */
+                        [class*="DaybreakLargeScreen"], [class*="CurrentConditions"],
+                        main, header, [data-testid] {
+                            background-color: #ffffff !important;
+                        }
+                        
+                        /* === DuckDuckGo === */
+                        /* Hide blue autocomplete overlay */
+                        .search--adv, .search--hero__above,
+                        .is-active .search__autocomplete,
+                        .search__autocomplete--open,
+                        .modal, .modal--open, .modal__overlay,
+                        .search--focus .search__input--adv__wrap::before,
+                        .search--focus::before,
+                        [class*="searchbox_overlay"],
+                        [class*="searchbox_modal"],
+                        [class*="Modal_overlay"],
+                        .acp-wrap, .acp {
+                            background-color: #ffffff !important;
+                            background: #ffffff !important;
+                        }
+                        /* Make autocomplete dropdown readable */
+                        .acp, .acp-wrap, .search__autocomplete, 
+                        [class*="searchbox_dropdown"],
+                        [class*="suggestion"] {
+                            background-color: #ffffff !important;
+                            border: 1px solid #ccc !important;
+                        }
+                        /* Remove blue overlay completely */
+                        .search--focus .search-wrap::before,
+                        .search--focus::before,
+                        .search--adv .search-wrap::before {
+                            display: none !important;
+                            opacity: 0 !important;
+                        }
+                        
+                        /* === General Dark Mode Override === */
+                        /* Force all dark backgrounds to light */
+                        [dark], [dark-theme], .dark-theme, .dark,
+                        [data-theme="dark"], [data-color-mode="dark"],
+                        [data-darkmode="true"], .nightmode, .night-mode,
+                        [class*="dark-mode"], [class*="darkmode"] {
+                            background-color: #ffffff !important;
+                            color: #000000 !important;
+                        }
+                        
+                        /* Fix common overlay/popup backgrounds */
+                        [role="dialog"], [role="modal"], [aria-modal="true"],
+                        .modal, .popup, .overlay, .dropdown,
+                        [class*="Modal"], [class*="Popup"], [class*="Overlay"],
+                        [class*="Dropdown"], [class*="Menu"] {
+                            background-color: #ffffff !important;
+                        }
+                        
+                        /* Ensure text is readable */
+                        p, span, div, h1, h2, h3, h4, h5, h6, a, li, td, th {
+                            color: inherit !important;
+                        }
+                    `;
+                    if (!document.getElementById('jiomosa-light-mode')) {
+                        document.head.appendChild(style);
+                    }
+                    
+                    // Remove dark mode classes from various sites
+                    document.documentElement.removeAttribute('dark');
+                    document.documentElement.removeAttribute('data-theme');
+                    document.documentElement.removeAttribute('data-color-mode');
+                    document.body.classList.remove('dark-theme', 'dark', 'nightmode', 'night-mode');
+                    document.body.removeAttribute('data-darkmode');
+                    
+                    // Disable zoom on the page - prevent browser zoom shortcuts
+                    document.body.style.zoom = '1';
+                    document.body.style.transform = 'none';
+                    document.documentElement.style.fontSize = '16px';
+                    
+                    // Prevent zoom via meta tag
+                    var metaViewport = document.querySelector('meta[name="viewport"]');
+                    if (metaViewport) {
+                        metaViewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+                    } else {
+                        var meta = document.createElement('meta');
+                        meta.name = 'viewport';
+                        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+                        document.head.appendChild(meta);
+                    }
+                    
+                    // Block keyboard shortcuts that trigger zoom (Ctrl+, Ctrl-, numbers, etc.)
+                    document.addEventListener('keydown', function(e) {
+                        // Block Ctrl+Plus, Ctrl+Minus, Ctrl+0 (zoom shortcuts)
+                        if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '0' || e.key === '=' || e.keyCode === 187 || e.keyCode === 189 || e.keyCode === 48)) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            return false;
+                        }
+                        // Block key 3 (which Google News uses for zoom-in) - prevent default to let our scroll handler work
+                        if (e.key === '3' || e.keyCode === 51) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            return false;
+                        }
+                        // Block number keys 1-9 if they might trigger zoom or shortcuts
+                        // Note: We don't block all numbers, just prevent default if Ctrl is held
+                    }, true);
+                    
+                    // Prevent wheel zoom
+                    document.addEventListener('wheel', function(e) {
+                        if (e.ctrlKey) {
+                            e.preventDefault();
+                        }
+                    }, { passive: false });
+                    
+                    // YouTube-specific: Force inline video playback, prevent downloads
+                    if (window.location.hostname.indexOf('youtube') !== -1) {
+                        // Override any download prompts
+                        window.addEventListener('beforeunload', function(e) {
+                            // Don't show download dialogs
+                        });
+                        
+                        // Force videos to play inline
+                        var videos = document.querySelectorAll('video');
+                        videos.forEach(function(v) {
+                            v.setAttribute('playsinline', '');
+                            v.setAttribute('webkit-playsinline', '');
+                            v.removeAttribute('download');
+                        });
+                        
+                        // Observe for new videos added to DOM
+                        var observer = new MutationObserver(function(mutations) {
+                            mutations.forEach(function(mutation) {
+                                mutation.addedNodes.forEach(function(node) {
+                                    if (node.tagName === 'VIDEO') {
+                                        node.setAttribute('playsinline', '');
+                                        node.setAttribute('webkit-playsinline', '');
+                                        node.removeAttribute('download');
+                                    }
+                                    if (node.querySelectorAll) {
+                                        node.querySelectorAll('video').forEach(function(v) {
+                                            v.setAttribute('playsinline', '');
+                                            v.setAttribute('webkit-playsinline', '');
+                                            v.removeAttribute('download');
+                                        });
+                                    }
+                                });
+                            });
+                        });
+                        observer.observe(document.body, { childList: true, subtree: true });
+                        
+                        // Block download manager prompts
+                        if (window.navigator && window.navigator.registerProtocolHandler) {
+                            // Already handled
+                        }
+                    }
+                """)
+            except Exception as e:
+                logger.warning(f"Could not inject light mode CSS: {e}")
             
             self.last_activity = time.time()
             logger.info(f"Successfully loaded: {url}")
@@ -223,92 +636,218 @@ class BrowserSession:
             logger.info(f"Click at ({x}, {y}), viewport: {viewport_size}")
             
             # Use JavaScript-based click for better reliability and navigation support
-            # Enhanced to handle checkboxes, radio buttons, and label elements
+            # Enhanced to handle video players, checkboxes, radio buttons, and label elements
             script = f"""
-                var element = document.elementFromPoint({x}, {y});
-                if (element) {{
-                    console.log('Clicking element at ({x}, {y}):', element.tagName, element.className, element.type || '');
-                    
-                    // Handle label elements - find and click the associated input
-                    if (element.tagName === 'LABEL') {{
-                        var forId = element.getAttribute('for');
-                        if (forId) {{
-                            var input = document.getElementById(forId);
-                            if (input) element = input;
-                        }} else {{
-                            // Label might contain the input
-                            var input = element.querySelector('input');
-                            if (input) element = input;
+                var x = {x}, y = {y};
+                var element = document.elementFromPoint(x, y);
+                if (!element) {{
+                    return {{success: false, error: 'No element found at ' + x + ',' + y}};
+                }}
+                
+                console.log('Initial element at (' + x + ', ' + y + '):', element.tagName, element.className, element.type || '');
+                
+                // Function to find clickable ancestor
+                function findClickable(el, maxDepth) {{
+                    for (var i = 0; i < maxDepth && el; i++) {{
+                        if (el.tagName === 'A' || el.tagName === 'BUTTON' || 
+                            (el.tagName === 'INPUT' && (el.type === 'submit' || el.type === 'button' || el.type === 'checkbox' || el.type === 'radio')) ||
+                            el.getAttribute('role') === 'button' ||
+                            el.getAttribute('role') === 'checkbox' ||
+                            el.getAttribute('role') === 'switch' ||
+                            el.onclick || el.hasAttribute('onclick') ||
+                            (el.className && typeof el.className === 'string' && 
+                             (el.className.indexOf('btn') !== -1 || el.className.indexOf('button') !== -1 ||
+                              el.className.indexOf('play') !== -1 || el.className.indexOf('ytp-') !== -1 ||
+                              el.className.indexOf('checkbox') !== -1 || el.className.indexOf('toggle') !== -1 ||
+                              el.className.indexOf('switch') !== -1))) {{
+                            return el;
                         }}
+                        el = el.parentElement;
                     }}
-                    
-                    // For checkboxes and radio buttons, toggle directly
-                    if (element.tagName === 'INPUT' && (element.type === 'checkbox' || element.type === 'radio')) {{
-                        element.checked = !element.checked;
-                        // Dispatch change event
-                        var changeEvent = new Event('change', {{bubbles: true}});
-                        element.dispatchEvent(changeEvent);
-                        var inputEvent = new Event('input', {{bubbles: true}});
-                        element.dispatchEvent(inputEvent);
-                        return {{
-                            success: true,
-                            element: element.tagName,
-                            type: element.type,
-                            checked: element.checked
-                        }};
+                    return null;
+                }}
+                
+                // For SVG elements, path elements, or elements with pointer-events, find clickable parent
+                if (element.tagName === 'svg' || element.tagName === 'SVG' || 
+                    element.tagName === 'path' || element.tagName === 'PATH' ||
+                    element.tagName === 'use' || element.tagName === 'USE' ||
+                    element.tagName === 'g' || element.tagName === 'G' ||
+                    element.tagName === 'circle' || element.tagName === 'rect' ||
+                    element.tagName === 'line' || element.tagName === 'polyline' ||
+                    element.tagName === 'polygon') {{
+                    var clickable = findClickable(element, 10);
+                    if (clickable) element = clickable;
+                }}
+                
+                // Handle custom checkbox/toggle elements (Reddit, etc.)
+                // Look for role="checkbox", role="switch", or checkbox-like class names
+                var isCustomCheckbox = element.getAttribute('role') === 'checkbox' || 
+                    element.getAttribute('role') === 'switch' ||
+                    (element.className && typeof element.className === 'string' && 
+                     (element.className.indexOf('checkbox') !== -1 || 
+                      element.className.indexOf('toggle') !== -1 ||
+                      element.className.indexOf('switch') !== -1));
+                
+                // Also check parent for checkbox role (sometimes the visual is inside)
+                if (!isCustomCheckbox && element.parentElement) {{
+                    var parent = element.parentElement;
+                    isCustomCheckbox = parent.getAttribute('role') === 'checkbox' || 
+                        parent.getAttribute('role') === 'switch' ||
+                        (parent.className && typeof parent.className === 'string' && 
+                         (parent.className.indexOf('checkbox') !== -1 || 
+                          parent.className.indexOf('toggle') !== -1));
+                    if (isCustomCheckbox) element = parent;
+                }}
+                
+                // Handle label elements - find and click the associated input
+                if (element.tagName === 'LABEL') {{
+                    var forId = element.getAttribute('for');
+                    if (forId) {{
+                        var input = document.getElementById(forId);
+                        if (input) element = input;
+                    }} else {{
+                        // Label might contain the input
+                        var input = element.querySelector('input');
+                        if (input) element = input;
                     }}
-                    
-                    // Scroll element into view if needed
-                    element.scrollIntoView({{behavior: 'instant', block: 'nearest'}});
-                    
-                    // Focus the element if it's focusable
-                    if (element.focus) {{
-                        element.focus();
-                    }}
-                    
-                    // Dispatch complete mouse event sequence for maximum compatibility
-                    var mousedown = new MouseEvent('mousedown', {{
-                        view: window,
-                        bubbles: true,
-                        cancelable: true,
-                        clientX: {x},
-                        clientY: {y},
-                        button: 0
-                    }});
-                    var mouseup = new MouseEvent('mouseup', {{
-                        view: window,
-                        bubbles: true,
-                        cancelable: true,
-                        clientX: {x},
-                        clientY: {y},
-                        button: 0
-                    }});
-                    var click = new MouseEvent('click', {{
-                        view: window,
-                        bubbles: true,
-                        cancelable: true,
-                        clientX: {x},
-                        clientY: {y},
-                        button: 0
-                    }});
-                    
-                    element.dispatchEvent(mousedown);
-                    element.dispatchEvent(mouseup);
-                    element.dispatchEvent(click);
-                    
-                    // Also call native click() for links and buttons
-                    element.click();
-                    
+                }}
+                
+                // For checkboxes and radio buttons, toggle directly
+                if (element.tagName === 'INPUT' && (element.type === 'checkbox' || element.type === 'radio')) {{
+                    element.checked = !element.checked;
+                    // Dispatch change event
+                    var changeEvent = new Event('change', {{bubbles: true}});
+                    element.dispatchEvent(changeEvent);
+                    var inputEvent = new Event('input', {{bubbles: true}});
+                    element.dispatchEvent(inputEvent);
                     return {{
                         success: true,
                         element: element.tagName,
-                        id: element.id || '',
-                        class: element.className || '',
-                        href: element.href || '',
-                        text: element.textContent ? element.textContent.substring(0, 50) : ''
+                        type: element.type,
+                        checked: element.checked
                     }};
                 }}
-                return {{success: false, error: 'No element found at ' + {x} + ',' + {y}}};
+                
+                // Handle custom checkbox with aria-checked attribute
+                if (isCustomCheckbox) {{
+                    var currentState = element.getAttribute('aria-checked');
+                    if (currentState !== null) {{
+                        var newState = currentState === 'true' ? 'false' : 'true';
+                        element.setAttribute('aria-checked', newState);
+                    }}
+                    // Still dispatch click events for the component to handle
+                }}
+                
+                // Scroll element into view if needed
+                element.scrollIntoView({{behavior: 'instant', block: 'nearest'}});
+                
+                // DON'T focus the element - it causes blue overlay on some sites like Instagram
+                // Only focus input fields
+                if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.isContentEditable) {{
+                    if (element.focus) {{
+                        element.focus();
+                    }}
+                }}
+                
+                // Special handling for consent/cookie buttons - look for common consent button patterns
+                var isConsentButton = false;
+                var consentKeywords = ['accept', 'agree', 'consent', 'allow', 'ok', 'got it', 'continue', 'i accept', 'i agree'];
+                var elementText = (element.textContent || '').toLowerCase().trim();
+                var elementId = (element.id || '').toLowerCase();
+                var elementClass = (typeof element.className === 'string' ? element.className : '').toLowerCase();
+                
+                for (var i = 0; i < consentKeywords.length; i++) {{
+                    if (elementText.indexOf(consentKeywords[i]) !== -1 || 
+                        elementId.indexOf(consentKeywords[i]) !== -1 ||
+                        elementClass.indexOf(consentKeywords[i]) !== -1) {{
+                        isConsentButton = true;
+                        break;
+                    }}
+                }}
+                
+                // If it's a consent button, try multiple click methods
+                if (isConsentButton) {{
+                    console.log('Detected consent button, using enhanced click');
+                    // Try pointer events
+                    var pointerDown = new PointerEvent('pointerdown', {{
+                        view: window, bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, isPrimary: true
+                    }});
+                    var pointerUp = new PointerEvent('pointerup', {{
+                        view: window, bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, isPrimary: true
+                    }});
+                    element.dispatchEvent(pointerDown);
+                    element.dispatchEvent(pointerUp);
+                }}
+                
+                // Dispatch complete mouse event sequence for maximum compatibility
+                var mousedown = new MouseEvent('mousedown', {{
+                    view: window,
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    button: 0
+                }});
+                var mouseup = new MouseEvent('mouseup', {{
+                    view: window,
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    button: 0
+                }});
+                var click = new MouseEvent('click', {{
+                    view: window,
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    button: 0
+                }});
+                
+                element.dispatchEvent(mousedown);
+                element.dispatchEvent(mouseup);
+                element.dispatchEvent(click);
+                
+                // Also call native click() for links and buttons
+                if (element.click) element.click();
+                
+                // For consent buttons, also try clicking any visible accept buttons in the DOM
+                if (isConsentButton || element.tagName === 'DIV' || element.tagName === 'SPAN') {{
+                    // Try to find and click common consent buttons
+                    var selectors = [
+                        '#onetrust-accept-btn-handler',
+                        '.onetrust-accept-btn-handler',
+                        '[id*="accept"]',
+                        '[class*="accept"]',
+                        'button[title*="Accept"]',
+                        'button[aria-label*="Accept"]',
+                        '.consent-accept',
+                        '.cookie-accept',
+                        '#accept-cookies',
+                        '.accept-button',
+                        '[data-testid*="accept"]'
+                    ];
+                    for (var s = 0; s < selectors.length; s++) {{
+                        try {{
+                            var btn = document.querySelector(selectors[s]);
+                            if (btn && btn.offsetParent !== null) {{
+                                btn.click();
+                                console.log('Clicked consent button via selector: ' + selectors[s]);
+                                break;
+                            }}
+                        }} catch(e) {{}}
+                    }}
+                }}
+                
+                return {{
+                    success: true,
+                    element: element.tagName,
+                    id: element.id || '',
+                    class: element.className || '',
+                    href: element.href || '',
+                    text: element.textContent ? element.textContent.substring(0, 50) : ''
+                }};
             """
             
             result = self.driver.execute_script(script)
@@ -329,16 +868,101 @@ class BrowserSession:
             return False, {'error': str(e)}
     
     def send_scroll(self, delta_x, delta_y):
-        """Send scroll event"""
+        """Send scroll event - handles both window and element scrolling"""
         try:
             if not self.driver:
                 return False, "Driver not initialized"
             
-            # Execute JavaScript to scroll
-            script = f"window.scrollBy({delta_x}, {delta_y});"
-            self.driver.execute_script(script)
+            # Enhanced scroll script that works with custom scroll containers (Instagram, Facebook, etc.)
+            script = f"""
+                var deltaX = {delta_x};
+                var deltaY = {delta_y};
+                
+                // Function to find the scrollable element
+                function findScrollable() {{
+                    // Common scroll container selectors for various sites
+                    var selectors = [
+                        'main[role="main"]',           // Instagram, Twitter
+                        '[role="feed"]',               // Facebook feed
+                        'article',                     // General articles
+                        '.scroll-container',
+                        '[data-pagelet="FeedUnit_0"]', // Facebook
+                        'section main',                // Instagram
+                        '[style*="overflow"]',         // Elements with overflow set
+                        'body',
+                        'html'
+                    ];
+                    
+                    // First check if there's an element under the center of the viewport that's scrollable
+                    var centerX = window.innerWidth / 2;
+                    var centerY = window.innerHeight / 2;
+                    var el = document.elementFromPoint(centerX, centerY);
+                    
+                    // Walk up the DOM to find a scrollable parent
+                    while (el && el !== document.body && el !== document.documentElement) {{
+                        var style = window.getComputedStyle(el);
+                        var overflowY = style.overflowY;
+                        var overflowX = style.overflowX;
+                        
+                        if ((overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') && el.scrollHeight > el.clientHeight) {{
+                            return el;
+                        }}
+                        if ((overflowX === 'auto' || overflowX === 'scroll' || overflowX === 'overlay') && el.scrollWidth > el.clientWidth) {{
+                            return el;
+                        }}
+                        el = el.parentElement;
+                    }}
+                    
+                    // Try specific selectors
+                    for (var i = 0; i < selectors.length; i++) {{
+                        var elements = document.querySelectorAll(selectors[i]);
+                        for (var j = 0; j < elements.length; j++) {{
+                            var elem = elements[j];
+                            if (elem.scrollHeight > elem.clientHeight || elem.scrollWidth > elem.clientWidth) {{
+                                return elem;
+                            }}
+                        }}
+                    }}
+                    
+                    return null;
+                }}
+                
+                var scrollTarget = findScrollable();
+                var scrolled = false;
+                
+                if (scrollTarget && scrollTarget !== document.body && scrollTarget !== document.documentElement) {{
+                    // Scroll the specific container
+                    var beforeY = scrollTarget.scrollTop;
+                    var beforeX = scrollTarget.scrollLeft;
+                    scrollTarget.scrollBy(deltaX, deltaY);
+                    scrolled = (scrollTarget.scrollTop !== beforeY || scrollTarget.scrollLeft !== beforeX);
+                    console.log('Scrolled element:', scrollTarget.tagName, scrollTarget.className, 'by', deltaY);
+                }}
+                
+                // Also try window scroll as fallback or in addition
+                if (!scrolled) {{
+                    var beforeWinY = window.scrollY || window.pageYOffset;
+                    var beforeWinX = window.scrollX || window.pageXOffset;
+                    window.scrollBy(deltaX, deltaY);
+                    scrolled = (window.scrollY !== beforeWinY || window.scrollX !== beforeWinX);
+                    console.log('Scrolled window by', deltaY);
+                }}
+                
+                // Also dispatch wheel event for sites that listen for it
+                var wheelEvent = new WheelEvent('wheel', {{
+                    deltaX: deltaX,
+                    deltaY: deltaY,
+                    deltaMode: 0,
+                    bubbles: true,
+                    cancelable: true
+                }});
+                (scrollTarget || document.body).dispatchEvent(wheelEvent);
+                
+                return scrolled;
+            """
+            result = self.driver.execute_script(script)
             self.last_activity = time.time()
-            logger.info(f"Scroll sent: dx={delta_x}, dy={delta_y}")
+            logger.info(f"Scroll sent: dx={delta_x}, dy={delta_y}, scrolled={result}")
             return True, f"Scrolled by ({delta_x}, {delta_y})"
             
         except Exception as e:
@@ -445,8 +1069,8 @@ class BrowserSession:
         """Check if session has expired based on inactivity"""
         return (time.time() - self.last_activity) > timeout
     
-    def capture_frame(self, target_width=240, target_height=320):
-        """Capture current browser frame as PNG screenshot - optimized for KaiOS display"""
+    def capture_frame(self, target_width=240, target_height=296):
+        """Capture current browser frame as PNG screenshot - optimized for KaiOS display (240x296 + 24px status bar)"""
         try:
             if not self.driver:
                 return None
@@ -454,7 +1078,7 @@ class BrowserSession:
             # Capture screenshot from browser
             screenshot = self.driver.get_screenshot_as_png()
             
-            # Resize to fit KaiOS display (240x320)
+            # Resize to fit KaiOS display (240x296)
             img = Image.open(BytesIO(screenshot))
             # Use high-quality resizing to maintain readability
             img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
@@ -754,24 +1378,10 @@ def send_click(session_id):
         
         session = active_sessions[session_id]
         
-        # Client sends coordinates in frame space (240x320)
-        # We need to map to actual browser viewport
-        # Get actual viewport dimensions
-        try:
-            viewport = session.driver.execute_script("return {width: window.innerWidth, height: window.innerHeight};")
-            actual_w = viewport.get('width', 320)
-            actual_h = viewport.get('height', 480)
-            
-            # Map from frame space (240x320) to actual viewport
-            # Frame is 240x320, scale to actual viewport
-            frame_w, frame_h = 240, 320
-            mapped_x = int(x * actual_w / frame_w)
-            mapped_y = int(y * actual_h / frame_h)
-            
-            logger.info(f"Click mapping: ({x},{y}) frame -> ({mapped_x},{mapped_y}) viewport ({actual_w}x{actual_h})")
-        except Exception as e:
-            logger.warning(f"Could not get viewport, using raw coords: {e}")
-            mapped_x, mapped_y = x, y
+        # Client sends coordinates already mapped to viewport space (320x480)
+        # Just use them directly
+        mapped_x, mapped_y = int(x), int(y)
+        logger.info(f"Click at ({mapped_x},{mapped_y}) in viewport space")
         
         success, result = session.send_click(mapped_x, mapped_y)
         
@@ -880,11 +1490,13 @@ def execute_script(session_id):
             return jsonify({'error': 'Driver not initialized'}), 500
         
         try:
-            result = session.driver.execute_script(script)
+            # Wrap script in a function to allow return statements
+            wrapped_script = f"return (function() {{ {script} }})();"
+            result = session.driver.execute_script(wrapped_script)
             session.last_activity = time.time()
             return jsonify({
                 'success': True,
-                'result': str(result) if result else None
+                'result': result  # Return as-is, Flask will JSON-serialize it
             }), 200
         except Exception as e:
             logger.error(f"Script execution error: {e}")
