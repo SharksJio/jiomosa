@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Jiomosa WebView</string>
+    <string name="loading">Loading…</string>
+    <string name="error_loading_page">Error loading page</string>
+    <string name="no_internet">No internet connection</string>
+
+    <!-- ActionBar Menu -->
+    <string name="action_back">Back</string>
+    <string name="action_home">Home</string>
+
+    <!-- Error View -->
+    <string name="error_icon">Error icon</string>
+    <string name="error_title">Oops! Something went wrong</string>
+    <string name="error_message">Unable to load the page</string>
+    <string name="retry_button">Try Again</string>
+    <string name="error_url_format">URL: %1$s</string>
+</resources>

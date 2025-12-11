@@ -1,0 +1,227 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.jiomosa.webview'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.jiomosa.webview"
+        
+        // Minimum SDK 21 recommended for full WebView features
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        
+        debug {
+            // Enable WebView debugging in debug builds
+            debuggable true
+        }
+    }
+    
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+    
+    buildFeatures {
+        viewBinding true
+    }
+}
+
+dependencies {
+    // AndroidX Core libraries
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    
+    // Material Design components
+    implementation 'com.google.android.material:material:1.11.0'
+    
+    // ConstraintLayout for layouts
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    
+    // AndroidX WebKit for advanced WebView features
+    implementation 'androidx.webkit:webkit:1.9.0'
+    
+    // Testing dependencies
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+}
+
+// groovy
+// Helper to find apksigner in PATH or Android SDK build-tools
+def findApksigner() {
+    // 1) Check system PATH
+    def pathEntries = System.getenv('PATH')?.split(File.pathSeparator) ?: []
+    def inPath = pathEntries.collect { new File(it, "apksigner") }.find { it.exists() }
+    if (inPath) return inPath.absolutePath
+
+    // 2) Check Android SDK locations
+    def sdkCandidates = []
+    def sdkFromAndroid = (project.hasProperty('android') && android.respondsTo('getSdkDirectory')) ? android.sdkDirectory : null
+    if (sdkFromAndroid) sdkCandidates << sdkFromAndroid
+    def envSdk = System.getenv('ANDROID_SDK_ROOT') ?: System.getenv('ANDROID_HOME')
+    if (envSdk) sdkCandidates << file(envSdk)
+
+    sdkCandidates.each { sdk ->
+        if (sdk && sdk.exists()) {
+            def buildToolsDir = new File(sdk, "build-tools")
+            if (buildToolsDir.exists()) {
+                def dirs = buildToolsDir.listFiles()?.findAll { it.isDirectory() } ?: []
+                // pick highest-version directory
+                dirs.sort { a, b -> a.name <=> b.name }
+                dirs.reverse().each { bd ->
+                    def candidate = new File(bd, "apksigner")
+                    if (candidate.exists()) return candidate.absolutePath
+                }
+            }
+        }
+    }
+
+    // 3) fallback: let OS resolve it at runtime
+    return 'apksigner'
+}
+
+// Updated debug signing task
+task signApkWithPlatformKeys(type: Exec) {
+    dependsOn 'assembleDebug'
+    group = 'signing'
+    description = 'Sign APK with platform keys using apksigner'
+
+    def keystorePath = '/Users/sharath.ks/Project/tools/PlatformSign/keys'
+    def platformKey = "${keystorePath}/platform.pk8"
+    def platformCert = "${keystorePath}/platform.x509.pem"
+    def buildDir = "${project.buildDir}/outputs/apk/debug"
+    def unsignedApk = "${buildDir}/app-debug.apk"
+    def signedApk = "${buildDir}/app-debug-signed.apk"
+
+    // resolve apksigner at configuration time
+    def apksignerPath = findApksigner()
+
+    doFirst {
+        println "================================================"
+        println "Signing APK with Platform Keys"
+        println "Input APK:  ${unsignedApk}"
+        println "Output APK: ${signedApk}"
+        println "Key:        ${platformKey}"
+        println "Cert:       ${platformCert}"
+        println "================================================"
+
+        if (!file(platformKey).exists()) {
+            throw new GradleException("Platform key not found: ${platformKey}")
+        }
+        if (!file(platformCert).exists()) {
+            throw new GradleException("Platform certificate not found: ${platformCert}")
+        }
+
+        if (!file(unsignedApk).exists()) {
+            throw new GradleException("Debug APK not found: ${unsignedApk}")
+        }
+    }
+
+    // sign to a new output file
+    commandLine apksignerPath, 'sign',
+            '--key', platformKey,
+            '--cert', platformCert,
+            '--out', signedApk,
+            unsignedApk
+
+    doLast {
+        println "================================================"
+        println "✅ APK signed successfully!"
+        println "Signed APK: ${signedApk}"
+        println "================================================"
+
+        exec {
+            commandLine apksignerPath, 'verify', '--verbose', signedApk
+        }
+    }
+}
+
+// Updated release signing task
+task signReleaseApkWithPlatformKeys(type: Exec) {
+    dependsOn 'assembleRelease'
+    group = 'signing'
+    description = 'Sign release APK with platform keys using apksigner'
+
+    def keystorePath = '/Users/sharath.ks/Project/tools/PlatformSign/keys'
+    def platformKey = "${keystorePath}/platform.pk8"
+    def platformCert = "${keystorePath}/platform.x509.pem"
+    def buildDir = "${project.buildDir}/outputs/apk/release"
+    def unsignedApk = "${buildDir}/app-release-unsigned.apk"
+    def signedApk = "${buildDir}/app-release-signed.apk"
+
+    def apksignerPath = findApksigner()
+
+    doFirst {
+        println "================================================"
+        println "Signing Release APK with Platform Keys"
+        println "Input APK:  ${unsignedApk}"
+        println "Output APK: ${signedApk}"
+        println "Key:        ${platformKey}"
+        println "Cert:       ${platformCert}"
+        println "================================================"
+
+        if (!file(platformKey).exists()) {
+            throw new GradleException("Platform key not found: ${platformKey}")
+        }
+        if (!file(platformCert).exists()) {
+            throw new GradleException("Platform certificate not found: ${platformCert}")
+        }
+
+        def apkFile = file(unsignedApk)
+        if (!apkFile.exists()) {
+            apkFile = file("${buildDir}/app-release.apk")
+            if (!apkFile.exists()) {
+                throw new GradleException("Release APK not found in ${buildDir}")
+            }
+            unsignedApk = apkFile.path
+        }
+
+        // ensure output directory exists
+        file(signedApk).parentFile?.mkdirs()
+    }
+
+    // Use --out to create signed output (no rename)
+    commandLine apksignerPath, 'sign',
+            '--key', platformKey,
+            '--cert', platformCert,
+            '--v1-signing-enabled', 'true',
+            '--v2-signing-enabled', 'true',
+            '--v3-signing-enabled', 'true',
+            '--v4-signing-enabled', 'false',
+            '--out', signedApk,
+            unsignedApk
+
+    doLast {
+        println "================================================"
+        println "✅ Release APK signed successfully!"
+        println "Signed APK: ${signedApk}"
+        println "================================================"
+
+        exec {
+            commandLine apksignerPath, 'verify', '--verbose', signedApk
+        }
+    }
+}
+
+
+
+
