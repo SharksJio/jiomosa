@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <!-- Back Button -->
+    <item
+        android:id="@+id/action_back"
+        android:icon="@android:drawable/ic_menu_revert"
+        android:title="@string/action_back"
+        app:showAsAction="ifRoom" />
+
+    <!-- Home Button -->
+    <item
+        android:id="@+id/action_home"
+        android:icon="@android:drawable/ic_menu_home"
+        android:title="@string/action_home"
+        app:showAsAction="ifRoom" />
+
+</menu>
+
