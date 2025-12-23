@@ -5,6 +5,18 @@
     <string name="error_loading_page">Error loading page</string>
     <string name="no_internet">No internet connection</string>
 
+    <!-- Microsoft 365 App Shortcuts -->
+    <string name="app_name_outlook">Outlook Mail</string>
+    <string name="app_name_teams">Microsoft Teams</string>
+    <string name="app_name_onedrive">OneDrive</string>
+    <string name="app_name_whiteboard">Whiteboard</string>
+
+    <!-- Default URLs for Microsoft 365 Apps -->
+    <string name="url_outlook">https://outlook.office.com/mail</string>
+    <string name="url_teams">https://teams.microsoft.com</string>
+    <string name="url_onedrive">https://rilcloud-my.sharepoint.com</string>
+    <string name="url_whiteboard">https://whiteboard.cloud.microsoft/</string>
+
     <!-- ActionBar Menu -->
     <string name="action_back">Back</string>
     <string name="action_home">Home</string>

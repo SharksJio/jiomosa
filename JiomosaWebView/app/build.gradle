@@ -21,13 +21,15 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         
         debug {
             // Enable WebView debugging in debug builds
             debuggable true
+            minifyEnabled false
         }
     }
     
@@ -49,12 +51,16 @@ dependencies {
     // AndroidX Core libraries
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.activity:activity-ktx:1.8.2'
     
     // Material Design components
     implementation 'com.google.android.material:material:1.11.0'
     
     // ConstraintLayout for layouts
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    
+    // CardView for app cards
+    implementation 'androidx.cardview:cardview:1.0.0'
     
     // AndroidX WebKit for advanced WebView features
     implementation 'androidx.webkit:webkit:1.9.0'
@@ -125,14 +131,14 @@ task signApkWithPlatformKeys(type: Exec) {
         println "================================================"
 
         if (!file(platformKey).exists()) {
-            throw new GradleException("Platform key not found: ${platformKey}")
+            throw new RuntimeException("Platform key not found: ${platformKey}")
         }
         if (!file(platformCert).exists()) {
-            throw new GradleException("Platform certificate not found: ${platformCert}")
+            throw new RuntimeException("Platform certificate not found: ${platformCert}")
         }
 
         if (!file(unsignedApk).exists()) {
-            throw new GradleException("Debug APK not found: ${unsignedApk}")
+            throw new RuntimeException("Debug APK not found: ${unsignedApk}")
         }
     }
 
@@ -180,17 +186,17 @@ task signReleaseApkWithPlatformKeys(type: Exec) {
         println "================================================"
 
         if (!file(platformKey).exists()) {
-            throw new GradleException("Platform key not found: ${platformKey}")
+            throw new RuntimeException("Platform key not found: ${platformKey}")
         }
         if (!file(platformCert).exists()) {
-            throw new GradleException("Platform certificate not found: ${platformCert}")
+            throw new RuntimeException("Platform certificate not found: ${platformCert}")
         }
 
         def apkFile = file(unsignedApk)
         if (!apkFile.exists()) {
             apkFile = file("${buildDir}/app-release.apk")
             if (!apkFile.exists()) {
-                throw new GradleException("Release APK not found in ${buildDir}")
+                throw new RuntimeException("Release APK not found in ${buildDir}")
             }
             unsignedApk = apkFile.path
         }

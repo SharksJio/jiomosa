@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:shortcutId="outlook"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/app_name_outlook"
+        android:shortcutLongLabel="@string/app_name_outlook"
+        android:icon="@mipmap/ic_launcher">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.jiomosa.webview"
+            android:targetClass="com.jiomosa.webview.OutlookActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="teams"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/app_name_teams"
+        android:shortcutLongLabel="@string/app_name_teams"
+        android:icon="@mipmap/ic_launcher">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.jiomosa.webview"
+            android:targetClass="com.jiomosa.webview.TeamsActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="onedrive"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/app_name_onedrive"
+        android:shortcutLongLabel="@string/app_name_onedrive"
+        android:icon="@mipmap/ic_launcher">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.jiomosa.webview"
+            android:targetClass="com.jiomosa.webview.OneDriveActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="whiteboard"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/app_name_whiteboard"
+        android:shortcutLongLabel="@string/app_name_whiteboard"
+        android:icon="@mipmap/ic_launcher">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.jiomosa.webview"
+            android:targetClass="com.jiomosa.webview.WhiteboardActivity" />
+    </shortcut>
+
+</shortcuts>

@@ -13,4 +13,10 @@
     <color name="jiomosa_primary">#667EEA</color>
     <color name="jiomosa_secondary">#764BA2</color>
     <color name="jiomosa_dark">#2D3748</color>
+    
+    <!-- App-specific icon colors (Microsoft brand colors) -->
+    <color name="outlook_bg">#0078D4</color>
+    <color name="teams_bg">#6264A7</color>
+    <color name="onedrive_bg">#0364B8</color>
+    <color name="whiteboard_bg">#F25022</color>
 </resources>
