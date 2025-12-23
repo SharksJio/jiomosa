@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    
+    <!-- Background Circle with Gradient -->
+    <path
+        android:pathData="M24,0C10.745,0 0,10.745 0,24s10.745,24 24,24s24,-10.745 24,-24S37.255,0 24,0z">
+        <aapt:attr name="android:fillColor" xmlns:aapt="http://schemas.android.com/aapt">
+            <gradient
+                android:startColor="#0078D4"
+                android:endColor="#005A9E"
+                android:type="linear"
+                android:angle="135" />
+        </aapt:attr>
+    </path>
+    
+    <!-- Mail Envelope -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,16h24v16H12z" />
+    <path
+        android:fillColor="#0078D4"
+        android:pathData="M13,17h22v14H13z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,16l12,8l12,-8z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M24,25l-12,-8v-1h24v1z" />
+</vector>

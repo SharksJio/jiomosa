@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    
+    <!-- Background Circle with Gradient -->
+    <path
+        android:pathData="M24,0C10.745,0 0,10.745 0,24s10.745,24 24,24s24,-10.745 24,-24S37.255,0 24,0z">
+        <aapt:attr name="android:fillColor" xmlns:aapt="http://schemas.android.com/aapt">
+            <gradient
+                android:startColor="#00BCF2"
+                android:endColor="#0099BC"
+                android:type="linear"
+                android:angle="135" />
+        </aapt:attr>
+    </path>
+    
+    <!-- Whiteboard Frame -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M10,12h28v22H10z" />
+    
+    <!-- Whiteboard Content Area -->
+    <path
+        android:fillColor="#F3F3F3"
+        android:pathData="M11,13h26v20H11z" />
+    
+    <!-- Drawing Elements -->
+    <path
+        android:fillColor="#0078D4"
+        android:strokeWidth="1.5"
+        android:strokeColor="#0078D4"
+        android:pathData="M15,18Q18,16 21,18T27,18" />
+    
+    <path
+        android:fillColor="#00BCF2"
+        android:pathData="M15,24m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0" />
+    
+    <path
+        android:fillColor="#FFB900"
+        android:pathData="M28,23h5v5h-5z" />
+    
+    <path
+        android:fillColor="#D83B01"
+        android:strokeWidth="1.5"
+        android:strokeColor="#D83B01"
+        android:pathData="M22,25l3,3l5,-5" />
+</vector>

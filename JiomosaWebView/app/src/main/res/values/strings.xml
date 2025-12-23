@@ -6,10 +6,10 @@
     <string name="no_internet">No internet connection</string>
 
     <!-- Microsoft 365 App Shortcuts -->
-    <string name="app_name_outlook">Outlook Mail</string>
-    <string name="app_name_teams">Microsoft Teams</string>
-    <string name="app_name_onedrive">OneDrive</string>
-    <string name="app_name_whiteboard">Whiteboard</string>
+    <string name="app_name_outlook">JioMail</string>
+    <string name="app_name_teams">JioTeams</string>
+    <string name="app_name_onedrive">JioDrive</string>
+    <string name="app_name_whiteboard">JioWhiteBoard</string>
 
     <!-- Default URLs for Microsoft 365 Apps -->
     <string name="url_outlook">https://outlook.office.com/mail</string>

@@ -34,7 +34,6 @@
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
@@ -43,7 +42,7 @@
             android:name=".OutlookActivity"
             android:exported="true"
             android:label="@string/app_name_outlook"
-            android:icon="@mipmap/ic_outlook"
+            android:icon="@drawable/ic_jiomail"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize"
@@ -65,7 +64,7 @@
             android:name=".TeamsActivity"
             android:exported="true"
             android:label="@string/app_name_teams"
-            android:icon="@mipmap/ic_teams"
+            android:icon="@drawable/ic_jioteams"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize"
@@ -87,7 +86,7 @@
             android:name=".OneDriveActivity"
             android:exported="true"
             android:label="@string/app_name_onedrive"
-            android:icon="@mipmap/ic_onedrive"
+            android:icon="@drawable/ic_jiodrive"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize"
@@ -109,7 +108,7 @@
             android:name=".WhiteboardActivity"
             android:exported="true"
             android:label="@string/app_name_whiteboard"
-            android:icon="@mipmap/ic_whiteboard"
+            android:icon="@drawable/ic_jiowhiteboard"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize"
