@@ -1,11 +1,15 @@
 package com.jiomosa.webview
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.util.Log
 import android.view.KeyEvent
 import android.view.Menu
@@ -16,8 +20,12 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 
 /**
  * StealthWebViewActivity - Android WebView with Stealth Parameters (Kotlin)
@@ -110,15 +118,59 @@ open class StealthWebViewActivity : AppCompatActivity() {
     private lateinit var retryButton: Button
 
     private lateinit var mainUrl: String
+    
+    // File chooser support
+    private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
+    private lateinit var fileChooserLauncher: ActivityResultLauncher<Intent>
+    private lateinit var permissionLauncher: ActivityResultLauncher<Array<String>>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_stealth_webview)
         
+        // Log app version for debugging
+        try {
+            val versionName = packageManager.getPackageInfo(packageName, 0).versionName
+            val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageManager.getPackageInfo(packageName, 0).longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, 0).versionCode.toLong()
+            }
+            Log.i(TAG, "JiomosaWebView v$versionName (build $versionCode)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting app version", e)
+        }
+        
         // Enable ActionBar
         supportActionBar?.apply {
             setDisplayHomeAsUpEnabled(true)
             setDisplayShowHomeEnabled(true)
+        }
+        
+        // Initialize file chooser activity result launcher
+        fileChooserLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            handleFileChooserResult(result.resultCode, result.data)
+        }
+        
+        // Initialize permission request launcher
+        permissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+            val allGranted = permissions.values.all { it }
+            if (allGranted) {
+                Log.d(TAG, "All storage permissions granted")
+                Toast.makeText(this, "Permissions granted", Toast.LENGTH_SHORT).show()
+            } else {
+                Log.w(TAG, "Some storage permissions denied")
+                Toast.makeText(
+                    this,
+                    "Storage permission required for file attachments",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
 
         // Initialize views
@@ -308,6 +360,9 @@ open class StealthWebViewActivity : AppCompatActivity() {
             
             // Re-inject stealth scripts to ensure they persist
             view?.let { injectStealthScripts(it) }
+            
+            // Inject file input bridge for modern web apps
+            view?.let { injectFileInputBridge(it) }
         }
         
         override fun onReceivedHttpError(
@@ -396,7 +451,7 @@ open class StealthWebViewActivity : AppCompatActivity() {
     }
 
     /**
-     * Custom WebChromeClient for progress and console logging
+     * Custom WebChromeClient that handles progress, title, and file chooser
      */
     private inner class StealthWebChromeClient : WebChromeClient() {
         
@@ -412,6 +467,46 @@ open class StealthWebViewActivity : AppCompatActivity() {
         override fun onReceivedTitle(view: WebView?, title: String?) {
             super.onReceivedTitle(view, title)
             title?.takeIf { it.isNotEmpty() }?.let { setTitle(it) }
+        }
+        
+        /**
+         * Handle file chooser for file uploads (Android 5.0+)
+         * This is called when the user clicks on file input fields in the web page
+         */
+        override fun onShowFileChooser(
+            webView: WebView?,
+            filePathCallback: ValueCallback<Array<Uri>>?,
+            fileChooserParams: FileChooserParams?
+        ): Boolean {
+            Log.d(TAG, "onShowFileChooser called")
+            
+            // Cancel any existing file upload callback
+            fileUploadCallback?.onReceiveValue(null)
+            fileUploadCallback = filePathCallback
+            
+            // Check and request permissions if needed
+            if (!hasStoragePermissions()) {
+                Log.d(TAG, "Requesting storage permissions")
+                requestStoragePermissions()
+                return true
+            }
+            
+            try {
+                val intent = createFileChooserIntent(fileChooserParams)
+                fileChooserLauncher.launch(intent)
+                Log.d(TAG, "File chooser launched")
+                return true
+            } catch (e: Exception) {
+                Log.e(TAG, "Error launching file chooser", e)
+                fileUploadCallback?.onReceiveValue(null)
+                fileUploadCallback = null
+                Toast.makeText(
+                    this@StealthWebViewActivity,
+                    "Error opening file chooser",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return false
+            }
         }
     }
 
@@ -429,6 +524,156 @@ open class StealthWebViewActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+    
+    /**
+     * Check if storage permissions are granted
+     */
+    private fun hasStoragePermissions(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ uses granular media permissions
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_MEDIA_IMAGES
+            ) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_MEDIA_VIDEO
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            // Android 12 and below
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+    
+    /**
+     * Request storage permissions based on Android version
+     */
+    private fun requestStoragePermissions() {
+        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ (API 33+)
+            arrayOf(
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.READ_MEDIA_VIDEO,
+                Manifest.permission.READ_MEDIA_AUDIO,
+                Manifest.permission.CAMERA
+            )
+        } else {
+            // Android 12 and below
+            arrayOf(
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.CAMERA
+            )
+        }
+        
+        permissionLauncher.launch(permissions)
+    }
+    
+    /**
+     * Create file chooser intent with proper MIME types and options
+     */
+    private fun createFileChooserIntent(fileChooserParams: WebChromeClient.FileChooserParams?): Intent {
+        val acceptTypes = fileChooserParams?.acceptTypes
+        val mimeTypes = if (!acceptTypes.isNullOrEmpty() && acceptTypes[0].isNotEmpty()) {
+            acceptTypes
+        } else {
+            // Default to common file types if not specified
+            arrayOf("image/*", "video/*", "application/pdf", "*/*")
+        }
+        
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
+            
+            // Allow multiple file selection if supported
+            if (fileChooserParams?.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+        }
+        
+        // Create chooser to allow user to select from different apps
+        return Intent.createChooser(intent, "Choose File").apply {
+            // Add camera option if image capture is accepted
+            if (mimeTypes.any { it.startsWith("image/") }) {
+                val cameraIntents = mutableListOf<Intent>()
+                
+                try {
+                    val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+                    if (captureIntent.resolveActivity(packageManager) != null) {
+                        cameraIntents.add(captureIntent)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Camera intent not available", e)
+                }
+                
+                if (cameraIntents.isNotEmpty()) {
+                    putExtra(Intent.EXTRA_INITIAL_INTENTS, cameraIntents.toTypedArray())
+                }
+            }
+        }
+    }
+    
+    /**
+     * Handle file chooser result
+     */
+    private fun handleFileChooserResult(resultCode: Int, data: Intent?) {
+        if (resultCode == Activity.RESULT_OK) {
+            val results = mutableListOf<Uri>()
+            
+            data?.let { intent ->
+                // Handle single file selection
+                intent.data?.let { uri ->
+                    results.add(uri)
+                    Log.d(TAG, "Single file selected: $uri")
+                }
+                
+                // Handle multiple file selection
+                intent.clipData?.let { clipData ->
+                    for (i in 0 until clipData.itemCount) {
+                        clipData.getItemAt(i).uri?.let { uri ->
+                            results.add(uri)
+                            Log.d(TAG, "File selected: $uri")
+                        }
+                    }
+                }
+            }
+            
+            if (results.isNotEmpty()) {
+                val resultArray = results.toTypedArray()
+                fileUploadCallback?.onReceiveValue(resultArray)
+                Toast.makeText(this, "${results.size} file(s) selected", Toast.LENGTH_SHORT).show()
+            } else {
+                fileUploadCallback?.onReceiveValue(null)
+            }
+        } else {
+            Log.d(TAG, "File chooser cancelled")
+            fileUploadCallback?.onReceiveValue(null)
+        }
+        
+        fileUploadCallback = null
+    }
+    
+    /**
+     * Inject file input bridge JavaScript into the WebView
+     */
+    private fun injectFileInputBridge(view: WebView) {
+        try {
+            // Load bridge script from assets
+            val bridgeScript = assets.open("file_input_bridge.js").bufferedReader().use { it.readText() }
+            
+            // Inject into page
+            view.evaluateJavascript(bridgeScript) { result ->
+                Log.d(TAG, "File input bridge injected, result: $result")
+            }
+            
+            Log.d(TAG, "File input bridge script injected successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error injecting file input bridge", e)
+        }
     }
 
     /**

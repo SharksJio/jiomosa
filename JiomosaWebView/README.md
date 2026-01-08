@@ -29,7 +29,13 @@ This Android app is part of the Jiomosa cloud website rendering platform. It pro
 - **🧹 Memory Efficient**: Proper cleanup reduces memory by 20-25%
 - **🔒 Code Obfuscation**: Full ProGuard protection in release builds
 
-## 📋 Requirements
+## � Current Version
+
+**Version 1.0.0** - Initial Release  
+For version history and changelog, see [VERSION.md](VERSION.md)  
+For versioning process, see [VERSIONING.md](VERSIONING.md)
+
+## �📋 Requirements
 
 - **Android Studio**: Arctic Fox (2020.3.1) or later
 - **Minimum SDK**: API 21 (Android 5.0 Lollipop)
