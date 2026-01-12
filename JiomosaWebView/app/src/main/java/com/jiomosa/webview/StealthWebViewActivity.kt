@@ -3,6 +3,9 @@ package com.jiomosa.webview
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -11,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Log
+import android.util.Base64
 import android.view.KeyEvent
 import android.view.Menu
 import android.view.MenuItem
@@ -26,6 +30,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import java.io.ByteArrayOutputStream
 
 /**
  * StealthWebViewActivity - Android WebView with Stealth Parameters (Kotlin)
@@ -59,6 +64,9 @@ open class StealthWebViewActivity : AppCompatActivity() {
         private const val STEALTH_USER_AGENT = 
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+        // Guardrail to prevent very large clipboard reads (8MB)
+        private const val CLIPBOARD_IMAGE_MAX_BYTES = 8 * 1024 * 1024
     }
 
     /**
@@ -118,6 +126,7 @@ open class StealthWebViewActivity : AppCompatActivity() {
     private lateinit var retryButton: Button
 
     private lateinit var mainUrl: String
+    private val clipboardManager by lazy { getSystemService(CLIPBOARD_SERVICE) as ClipboardManager }
     
     // File chooser support
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
@@ -327,6 +336,9 @@ open class StealthWebViewActivity : AppCompatActivity() {
         // === WebView Clients ===
         webView.webViewClient = StealthWebViewClient()
         webView.webChromeClient = StealthWebChromeClient()
+
+        // Expose clipboard bridge to JavaScript for paste support
+        webView.addJavascriptInterface(ClipboardBridge(), "ClipboardBridge")
         
         Log.d(TAG, "Stealth WebView configured with User-Agent: $STEALTH_USER_AGENT")
     }
@@ -363,6 +375,9 @@ open class StealthWebViewActivity : AppCompatActivity() {
             
             // Inject file input bridge for modern web apps
             view?.let { injectFileInputBridge(it) }
+
+            // Inject clipboard bridge to enable pasting Android clipboard (incl. images)
+            view?.let { injectClipboardBridge(it) }
         }
         
         override fun onReceivedHttpError(
@@ -673,6 +688,21 @@ open class StealthWebViewActivity : AppCompatActivity() {
             Log.d(TAG, "File input bridge script injected successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error injecting file input bridge", e)
+        }
+    }
+
+    /**
+     * Inject clipboard bridge JavaScript into the WebView to support pasting
+     * images/text from the Android clipboard into web apps.
+     */
+    private fun injectClipboardBridge(view: WebView) {
+        try {
+            val clipboardScript = assets.open("clipboard_bridge.js").bufferedReader().use { it.readText() }
+            view.evaluateJavascript(clipboardScript) { result ->
+                Log.d(TAG, "Clipboard bridge injected, result: $result")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error injecting clipboard bridge", e)
         }
     }
 
@@ -1151,5 +1181,108 @@ open class StealthWebViewActivity : AppCompatActivity() {
             destroy()
         }
         super.onDestroy()
+    }
+
+    /**
+     * JavaScript interface exposing safe clipboard reads for the WebView.
+     * Allows pages to request Android clipboard data (images/text) to simulate paste.
+     */
+    private inner class ClipboardBridge {
+
+        @JavascriptInterface
+        fun hasImage(): Boolean {
+            return findFirstImageItem() != null
+        }
+
+        @JavascriptInterface
+        fun getImageMimeType(): String? {
+            val item = findFirstImageItem() ?: return null
+            val uri = item.uri ?: return null
+            return contentResolver.getType(uri)
+        }
+
+        /**
+         * Returns a data URL for the first image in the clipboard, or null if unavailable.
+         * Large payloads are rejected to avoid OOM.
+         */
+        @JavascriptInterface
+        fun getImageDataUrl(): String? {
+            val item = findFirstImageItem() ?: return null
+            val uri = item.uri ?: return null
+            val mime = contentResolver.getType(uri) ?: "image/png"
+
+            val bytes = readImageBytes(uri) ?: return null
+            if (bytes.size > CLIPBOARD_IMAGE_MAX_BYTES) {
+                Log.w(TAG, "Clipboard image too large: ${bytes.size} bytes")
+                return null
+            }
+
+            val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            return "data:$mime;base64,$base64"
+        }
+
+        @JavascriptInterface
+        fun getText(): String? {
+            return try {
+                val clip = clipboardManager.primaryClip ?: return null
+                if (clip.itemCount == 0) return null
+                clip.getItemAt(0).coerceToText(this@StealthWebViewActivity)?.toString()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error reading clipboard text", e)
+                null
+            }
+        }
+
+        private fun findFirstImageItem(): ClipData.Item? {
+            val clip = try {
+                clipboardManager.primaryClip
+            } catch (e: Exception) {
+                Log.e(TAG, "Error accessing clipboard", e)
+                null
+            } ?: return null
+
+            if (!clip.description.hasMimeType(ClipDescription.MIMETYPE_TEXT_URILIST) &&
+                !clip.description.hasMimeType("image/*")) {
+                // Description does not claim URIs or images; still inspect items for safety
+                Log.d(TAG, "Clipboard description indicates no image; inspecting items")
+            }
+
+            for (i in 0 until clip.itemCount) {
+                val item = clip.getItemAt(i)
+                val uri = item.uri
+                if (uri != null) {
+                    val type = contentResolver.getType(uri)
+                    if (type != null && type.startsWith("image/")) {
+                        return item
+                    }
+                }
+            }
+
+            return null
+        }
+
+        private fun readImageBytes(uri: Uri): ByteArray? {
+            return try {
+                contentResolver.openInputStream(uri)?.use { input ->
+                    val buffer = ByteArrayOutputStream()
+                    val data = ByteArray(16 * 1024)
+                    var total = 0
+                    while (true) {
+                        val read = input.read(data)
+                        if (read <= 0) break
+                        total += read
+                        if (total > CLIPBOARD_IMAGE_MAX_BYTES * 2) {
+                            Log.w(TAG, "Aborting clipboard read, exceeds hard cap")
+                            return null
+                        }
+                        buffer.write(data, 0, read)
+                    }
+                    buffer.toByteArray()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error reading clipboard image", e)
+                null
+            }
+        }
     }
 }

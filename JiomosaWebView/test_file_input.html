@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Input Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 2px solid #007bff;
+            border-radius: 8px;
+            background-color: #f0f8ff;
+        }
+        h2 {
+            color: #007bff;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            width: 100%;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            min-height: 50px;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebView File Chooser Test</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: Single File Selection</h2>
+        <input type="file" id="singleFile" onchange="handleFileSelect(this)">
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 2: Multiple File Selection</h2>
+        <input type="file" id="multipleFiles" multiple onchange="handleFileSelect(this)">
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 3: Image Files Only</h2>
+        <input type="file" id="imageFile" accept="image/*" onchange="handleFileSelect(this)">
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 4: Image with Camera Capture</h2>
+        <input type="file" id="cameraCapture" accept="image/*" capture="environment" onchange="handleFileSelect(this)">
+    </div>
+    
+    <div id="result">
+        <strong>Selected files will appear here...</strong>
+    </div>
+    
+    <script>
+        function handleFileSelect(input) {
+            const result = document.getElementById('result');
+            const files = input.files;
+            
+            if (files.length === 0) {
+                result.innerHTML = '<strong>No file selected</strong>';
+                return;
+            }
+            
+            let html = '<strong>Selected Files:</strong><br><br>';
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                html += `File ${i+1}: ${file.name}<br>`;
+                html += `Size: ${(file.size / 1024).toFixed(2)} KB<br>`;
+                html += `Type: ${file.type || 'unknown'}<br><br>`;
+            }
+            
+            result.innerHTML = html;
+            
+            console.log('File(s) selected:', files);
+        }
+    </script>
+</body>
+</html>
